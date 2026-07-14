@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Returns Reason Hotspot Report</title>
+<style>
+  :root{
+    --brand:#15243D;
+    --brand-soft:#1E3355;
+    --ink:#1B2430;
+    --ink-2:#5A6B7C;
+    --ink-3:#8494A3;
+    --surface:#FFFFFF;
+    --surface-2:#F5F7FA;
+    --line:#DFE5EC;
+    --bar:#2E6DA4;          /* sequential single hue — magnitude */
+    --bar-track:#EAEFF5;
+    --hot-bg:#FDECEC;       /* top-3 tint (redundant with rank column) */
+    --hot-edge:#C0392B;
+    --warn-bg:#FFF8E6;
+    --warn-edge:#B7791F;
+    --ok:#1E7A46;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    background:var(--surface-2);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px 56px}
+
+  /* ---------- header ---------- */
+  header{background:var(--brand);color:#fff;padding:26px 0 22px;border-bottom:4px solid var(--brand-soft)}
+  .hdr{max-width:1180px;margin:0 auto;padding:0 20px;display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;justify-content:space-between}
+  h1{margin:0 0 6px;font-size:24px;letter-spacing:-.2px}
+  .gen{margin:0;color:#B9C6D8;font-size:13px}
+  .snap{margin:8px 0 0;font-size:12.5px;color:#8FA3BE;border-left:2px solid #3D5478;padding-left:9px}
+  .tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  button,select{
+    font:inherit;font-size:13px;border-radius:6px;border:1px solid #3D5478;
+    background:#20355A;color:#E7EDF5;padding:7px 13px;cursor:pointer;
+  }
+  button:hover,select:hover{background:#2A4470}
+  select{padding-right:8px}
+  .ccy-wrap{display:flex;align-items:center;gap:7px;color:#B9C6D8;font-size:12.5px}
+
+  /* ---------- notes ---------- */
+  .notes{
+    background:var(--warn-bg);border:1px solid #F0DFB4;border-left:4px solid var(--warn-edge);
+    border-radius:6px;margin:22px 0 4px;
+  }
+  .notes summary{cursor:pointer;padding:12px 16px;font-weight:600;font-size:13.5px;color:#7A5A12}
+  .notes .body{padding:0 16px 14px;font-size:13.5px;color:#5C4A1E}
+  .notes .body p{margin:9px 0}
+  .notes code{background:#F6EBCF;padding:1px 5px;border-radius:3px;font-size:12.5px}
+
+  /* ---------- KPI ---------- */
+  .platform{margin:30px 0 0}
+  .plabel{
+    display:flex;align-items:baseline;gap:10px;margin:0 0 12px;
+    font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);
+  }
+  .plabel .rule{flex:1;height:1px;background:var(--line)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .kpi .k{font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin:0 0 7px}
+  .kpi .v{font-size:26px;font-weight:650;letter-spacing:-.5px;color:var(--ink);line-height:1.15}
+  .kpi .v.sm{font-size:15px;font-weight:600;line-height:1.35;word-break:break-word}
+  .kpi .sub{font-size:12px;color:var(--ink-3);margin-top:5px}
+
+  /* ---------- tables ---------- */
+  section{margin:26px 0 0}
+  h2{
+    font-size:16px;margin:0 0 3px;color:var(--ink);
+    display:flex;align-items:center;gap:9px;
+  }
+  .tag{
+    font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    padding:3px 7px;border-radius:4px;background:var(--brand);color:#fff;
+  }
+  .sub-h{margin:0 0 11px;font-size:12.5px;color:var(--ink-3)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-size:13.5px}
+  th{
+    text-align:left;font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--ink-2);background:var(--surface-2);padding:10px 14px;
+    border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  td{padding:10px 14px;border-bottom:1px solid #EDF1F5;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:nth-child(even):not(.hot){background:#FBFCFD}
+  tbody tr.hot{background:var(--hot-bg);box-shadow:inset 3px 0 0 var(--hot-edge)}
+  .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .rank{color:var(--ink-3);font-variant-numeric:tabular-nums;width:34px}
+  .money{font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+  .reason{font-weight:600}
+  .muted{color:var(--ink-3)}
+  .unattr{color:var(--hot-edge);font-style:italic}
+
+  /* proportion bar: magnitude, single hue, 4px rounded data-end, baseline-anchored */
+  .barcell{min-width:150px}
+  .bar-row{display:flex;align-items:center;gap:9px}
+  .track{flex:1;height:7px;background:var(--bar-track);border-radius:4px;overflow:hidden;min-width:60px}
+  .fill{height:100%;background:var(--bar);border-radius:0 4px 4px 0}
+  .pct{font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:12.5px;width:42px;text-align:right}
+
+  .empty{padding:26px 16px;text-align:center;color:var(--ink-3);font-size:13.5px}
+  .foot-note{padding:9px 14px;background:var(--surface-2);border-top:1px solid var(--line);font-size:12px;color:var(--ink-3)}
+
+  footer{
+    margin-top:40px;padding-top:16px;border-top:1px solid var(--line);
+    display:flex;flex-wrap:wrap;gap:8px 20px;font-size:12.5px;color:var(--ink-3);
+  }
+  footer span{display:flex;align-items:center;gap:6px}
+  footer span::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ink-3)}
+
+  #toast{
+    position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);
+    background:var(--brand);color:#fff;padding:11px 17px;border-radius:7px;font-size:13px;
+    box-shadow:0 6px 22px rgba(21,36,61,.28);opacity:0;pointer-events:none;transition:.22s;max-width:90vw;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+
+  @media (max-width:860px){ .kpis{grid-template-columns:repeat(2,1fr)} }
+
+  @media print{
+    body{background:#fff}
+    .tools,.notes summary::marker,#toast{display:none}
+    .notes{break-inside:avoid}
+    header{background:var(--brand)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    tbody tr.hot{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    section,.platform{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hdr">
+    <div>
+      <h1>Returns Reason Hotspot Report</h1>
+      <p class="gen">Generated: <span id="gen"></span> &nbsp;·&nbsp; Window: last 3 months &nbsp;·&nbsp; Source: PostgreSQL</p>
+      <p class="snap">Snapshot as of the date above — this is not a live / auto-updating report.</p>
+    </div>
+    <div class="tools">
+      <span class="ccy-wrap">
+        <label for="ccy">Currency</label>
+        <select id="ccy"></select>
+      </span>
+      <button id="btn-refresh" title="Re-renders from the data embedded in this file. Does NOT re-query PostgreSQL.">Refresh</button>
+      <button id="btn-print">Print</button>
+      <button id="btn-csv">Export CSV</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <details class="notes" open>
+    <summary>Data notes — 3 deviations from the task brief, and why</summary>
+    <div class="body">
+      <p><strong>1. Currency is split, not summed.</strong> Amazon returns in this window span GBP, USD, EUR, CAD and a group with no currency recorded. The brief's Step 1 / Step 2 SQL sums <code>refunded_amount</code> with no currency grouping, which adds pounds to dollars to euros and labels the result <code>£</code>. That is the same error the brief's own scope table forbids, so every figure here is scoped to the single currency selected above. <strong>No total on this page mixes currencies, and no total mixes Amazon with eBay.</strong></p>
+      <p><strong>2. eBay SKUs are attributed on <code>order_id + item_id</code>, not <code>order_id</code> alone.</strong> <code>order_transaction</code> holds one row per line item, so the brief's Step 4 join duplicates a return once per SKU in the basket — 42 orders fan out, worst case one order across 10 line items, inflating the eBay SKU total by <strong>+12.7%</strong> (£12,825.91 against a true £11,384.44) and blaming innocent SKUs that merely shared a basket. Joining on <code>item_id</code> resolves 440 of 489 returns (90%) to exactly one SKU; the 46 that land on variation listings (one eBay listing, several SKUs) are split evenly, and 3 returns with no matching order line are shown as an explicit <em>Unattributed</em> row rather than dropped. The SKU tables now reconcile to the reason tables exactly, in every currency.</p>
+      <p><strong>3. Reason values differ from the brief's list.</strong> The live data mostly carries a <code>CR-</code> prefix (<code>CR-NOT_COMPATIBLE</code>), and the same reason appears both with and without it — grouping raw would split one reason across two rows. The prefix is stripped mechanically so they merge. No reasons were renamed or combined beyond that: <code>AMZ-PG-BAD-DESC</code> is left as its own reason, though it is very likely the "not as described" signal the Listing team is looking for — worth confirming with DWC before acting on it.</p>
+    </div>
+  </details>
+
+  <!-- ============ AMAZON ============ -->
+  <div class="platform">
+    <p class="plabel">Amazon <span class="rule"></span></p>
+    <div class="kpis" id="kpi-amz"></div>
+  </div>
+
+  <section>
+    <h2><span class="tag">Amazon</span> Return Reasons Summary</h2>
+    <p class="sub-h">Ranked by refund cost, so the bar (share of return <em>count</em>) is deliberately not in descending order. Top 3 shaded.</p>
+    <div class="card">
+      <div class="scroll"><table id="t-amz-reason"></table></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="tag">Amazon</span> Top 15 SKUs by Refund Value</h2>
+    <p class="sub-h">The top offenders. "Top reason" is that SKU's single most common return reason.</p>
+    <div class="card">
+      <div class="scroll"><table id="t-amz-sku"></table></div>
+    </div>
+  </section>
+
+  <!-- ============ EBAY ============ -->
+  <div class="platform">
+    <p class="plabel">eBay <span class="rule"></span></p>
+    <div class="kpis" id="kpi-eby"></div>
+  </div>
+
+  <section>
+    <h2><span class="tag">eBay</span> Return Reasons Summary</h2>
+    <p class="sub-h">Filtered to real returns only (<span class="mono">res_his_order = 0</span>). Top 3 shaded.</p>
+    <div class="card">
+      <div class="scroll"><table id="t-eby-reason"></table></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="tag">eBay</span> Top 15 SKUs by Refund Value</h2>
+    <p class="sub-h">SKU resolved via <span class="mono">order_transaction</span> on <span class="mono">order_id + item_id</span>.</p>
+    <div class="card">
+      <div class="scroll"><table id="t-eby-sku"></table></div>
+      <div class="foot-note" id="eby-sku-note"></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Generated from PostgreSQL</span>
+    <span>3 month window</span>
+    <span>Amazon &amp; eBay kept separate</span>
+    <span>One currency at a time — never summed across</span>
+    <span>Snapshot only</span>
+  </footer>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================================================================
+   EMBEDDED DATA — pulled from PostgreSQL, window = last 3 months.
+   Amazon : public.amazon_returns
+   eBay   : public.ebay_returns (res_his_order = 0)
+            + public.order_transaction (SKU, via order_id + item_id)
+   ================================================================ */
+
+const GENERATED_AT = "2026-07-14";
+
+const SYM = { GBP:"£", EUR:"€", USD:"$", CAD:"C$", UNSPECIFIED:"" };
+
+const AMAZON_REASONS = {
+  GBP:[
+    ["NOT_COMPATIBLE",347,28.8,5665.27],["UNWANTED_ITEM",236,19.6,4293.45],
+    ["AMZ-PG-BAD-DESC",118,9.8,2340.74],["QUALITY_UNACCEPTABLE",100,8.3,1691.55],
+    ["NO_REASON_GIVEN",65,5.4,1385.38],["DEFECTIVE",77,6.4,1364.40],
+    ["ORDERED_WRONG_ITEM",61,5.1,1347.45],["DAMAGED_BY_FC",54,4.5,810.40],
+    ["MISSING_PARTS",37,3.1,808.16],["SWITCHEROO",41,3.4,667.90],
+    ["DAMAGED_BY_CARRIER",38,3.2,599.34],["MISSED_ESTIMATED_DELIVERY",22,1.8,314.36],
+    ["FOUND_BETTER_PRICE",3,0.2,80.87],["UNAUTHORIZED_PURCHASE",1,0.1,22.89],
+    ["AMZ-PG-APP-TOO-LARGE",2,0.2,10.48],["EXTRA_ITEM",3,0.2,9.69]
+  ],
+  USD:[
+    ["AMZ-PG-BAD-DESC",35,28.9,1289.18],["UNWANTED_ITEM",29,24.0,1166.12],
+    ["DEFECTIVE",9,7.4,847.75],["ORDERED_WRONG_ITEM",6,5.0,247.91],
+    ["POOR_FIT",4,3.3,220.46],["MISSED_ESTIMATED_DELIVERY",8,6.6,190.48],
+    ["QUALITY_UNACCEPTABLE",4,3.3,163.07],["SWITCHEROO",8,6.6,133.50],
+    ["AMZ-PG-APP-TOO-SMALL",6,5.0,119.23],["DAMAGED_BY_FC",5,4.1,92.27],
+    ["MISSING_PARTS",2,1.7,79.98],["UNAUTHORIZED_PURCHASE",1,0.8,37.53],
+    ["DAMAGED_BY_CARRIER",2,1.7,37.09],["AMZ-PG-APP-TOO-LARGE",2,1.7,13.67]
+  ],
+  EUR:[
+    ["NOT_COMPATIBLE",37,20.3,831.47],["UNWANTED_ITEM",23,12.6,738.34],
+    ["NO_REASON_GIVEN",30,16.5,627.35],["DAMAGED_BY_FC",14,7.7,446.43],
+    ["QUALITY_UNACCEPTABLE",13,7.1,380.24],["ORDERED_WRONG_ITEM",16,8.8,259.16],
+    ["DEFECTIVE",9,4.9,214.82],["AMZ-PG-BAD-DESC",12,6.6,203.81],
+    ["MISSING_PARTS",8,4.4,196.69],["SWITCHEROO",6,3.3,153.77],
+    ["DAMAGED_BY_CARRIER",6,3.3,147.72],["MISSED_ESTIMATED_DELIVERY",7,3.8,133.27],
+    ["EXTRA_ITEM",1,0.5,29.78]
+  ],
+  CAD:[
+    ["NOT_COMPATIBLE",3,21.4,165.45],["MISSED_ESTIMATED_DELIVERY",1,7.1,120.90],
+    ["QUALITY_UNACCEPTABLE",4,28.6,117.26],["AMZ-PG-BAD-DESC",2,14.3,0.00],
+    ["DEFECTIVE",2,14.3,0.00],["ORDERED_WRONG_ITEM",2,14.3,0.00]
+  ],
+  UNSPECIFIED:[
+    ["NOT_COMPATIBLE",148,21.9,993.34],["MISSING_PARTS",20,3.0,869.51],
+    ["AMZ-PG-BAD-DESC",27,4.0,818.65],["QUALITY_UNACCEPTABLE",72,10.6,725.66],
+    ["DAMAGED_BY_FC",33,4.9,603.16],["UNWANTED_ITEM",150,22.2,585.62],
+    ["NO_REASON_GIVEN",57,8.4,462.61],["ORDERED_WRONG_ITEM",41,6.1,305.22],
+    ["SWITCHEROO",21,3.1,261.18],["DEFECTIVE",31,4.6,184.70],
+    ["MISSED_ESTIMATED_DELIVERY",12,1.8,171.67],["FOUND_BETTER_PRICE",9,1.3,68.51],
+    ["DAMAGED_BY_CARRIER",13,1.9,32.88],["NOT_AS_DESCRIBED",33,4.9,0.00],
+    ["UNDELIVERABLE_UNKNOWN",7,1.0,0.00],["UNDELIVERABLE_REFUSED",2,0.3,0.00],
+    ["UNAUTHORIZED_PURCHASE",1,0.1,0.00]
+  ]
+};
+
+const AMAZON_SKUS = {
+  GBP:[
+    ["ENC6343","B0CW5YSTMD",1,309.77,"ORDERED_WRONG_ITEM"],
+    ["CRFF500FG+WCCY1ROGD3PK+LDDTCE27123PK","B0CMCPXP21",6,306.14,"NOT_COMPATIBLE"],
+    ["WCCYSP180GD2PK+RPR44WH2PK","B0G49DDJ63",17,261.19,"NOT_COMPATIBLE"],
+    ["CRSF100YB+PHCHPCRYB+LSCY290YB C","B0CHW3Q9VG",6,192.48,"UNWANTED_ITEM"],
+    ["WCCYSP160BM2PK","B0DMF2KF74",10,174.35,"NOT_COMPATIBLE"],
+    ["WCDTBM2PK+RPR44WH2PK","B0DH4KYFPD",10,162.71,"NOT_COMPATIBLE"],
+    ["LSGLSC115AR+RPM40WH","B0GQ48BNBZ",9,148.99,"AMZ-PG-BAD-DESC"],
+    ["LSCYRO120WH2PK+RPR44WH2PK","B0FX2TFPZM",7,146.46,"NO_REASON_GIVEN"],
+    ["PL4HRR","B0GLPHBN8D",2,145.63,"DEFECTIVE"],
+    ["LSMCSPDRFL T","B091B7NP2G",4,139.69,"NOT_COMPATIBLE"],
+    ["PLMJBC","B0D9Q634M6",1,136.83,"ORDERED_WRONG_ITEM"],
+    ["LDMG95E278APK","B09477YHK7",6,132.57,"NOT_COMPATIBLE"],
+    ["24IP67120 DD","B07SSFPBJJ",3,132.48,"AMZ-PG-BAD-DESC"],
+    ["CRFF500BM+PHMU1PBRYB3PK+LSDM220YB3PK B","B09HV7T2B5",5,126.97,"NOT_COMPATIBLE"],
+    ["LSCYRO200GD2PK+RPR44WH2PK","B0FX2T3V9J",3,126.87,"NOT_COMPATIBLE"]
+  ],
+  USD:[
+    ["CRSF120BM+WSCH135BM+SCRN70BM+LSFT220RE_S","B0FPM6MTJS",1,494.13,"DEFECTIVE"],
+    ["LSMS320BG+RPR44WH-IN","B0FY61C5BM",13,391.07,"AMZ-PG-BAD-DESC"],
+    ["RPR44WH+LSDO400BM-SA","B0FR9KX2FB",4,260.15,"AMZ-PG-BAD-DESC"],
+    ["RPR44WH+LSDO400BG-SA","B0FR9L8DL4",5,170.46,"UNWANTED_ITEM"],
+    ["LSCY290WH+RPR44WH_IN","B0G1MDKPB1",2,154.63,"UNWANTED_ITEM"],
+    ["CRSF120BM+WSCH135BM+SCRN70BM+LSFT220BI_S","B0FPM4DCQV",1,152.04,"DEFECTIVE"],
+    ["LSCY290BL+RPR44WH_IN","B0G1M9T9P1",1,127.92,"AMZ-PG-BAD-DESC"],
+    ["LSCY290BC+RPR44WH-IN","B0FTYS6NV2",3,120.69,"DEFECTIVE"],
+    ["CRSF120BM+PHCH1BMRBM+LSCY290YE-SN","B0FWKGSQQH",1,110.52,"AMZ-PG-BAD-DESC"],
+    ["LSFT220CO2PK+RPR44WH2PK_UT","B0GRTS5KPY",2,99.98,"AMZ-PG-BAD-DESC"],
+    ["CL3TGDAPK_JJ","B0G64VCJ7F",1,91.30,"UNWANTED_ITEM"],
+    ["LSCY290BS+RPR44WH-IN","B0F3N9LCX2",1,89.05,"ORDERED_WRONG_ITEM"],
+    ["LSDO210BG+RPR44BG_ST","B0FPLCM7B4",2,83.57,"POOR_FIT"],
+    ["LSCY290YB3PK+RPR44WH3PK_UT","B0GR5J92ZP",1,77.03,"AMZ-PG-BAD-DESC"],
+    ["LSFT220BG2PK+RPR44WH2PK_ST","B0FPLN2PXD",2,76.46,"AMZ-PG-BAD-DESC"]
+  ],
+  EUR:[
+    ["CRSF100CH+PHCHPCRCH+LSMS320WH-DE","B0DYTZ2K5D",4,168.24,"DEFECTIVE"],
+    ["CRFF500BM+PHCH1BMRBM3PK+LSCY210BG3PK-J","B08NTKB1DM",5,158.26,"DEFECTIVE"],
+    ["CRSF100SN+LHNSE27SN+SCRN70BM+LSTF40SN","B09LR6MDYF",2,154.92,"QUALITY_UNACCEPTABLE"],
+    ["ENC1872 A","B09G73CZ8F",1,116.15,"QUALITY_UNACCEPTABLE"],
+    ["ENC1971 M","B0DR1WMNP6",1,114.63,"DAMAGED_BY_FC"],
+    ["CRSF100BM+WSHR135BM+LSFT220BC","B0C5HPY6BQ",1,114.15,"NOT_COMPATIBLE"],
+    ["CRSF100BM+PHCH1BMRBM+LSCY290BM-JJ","B0DCVYB6D5",2,104.18,"NO_REASON_GIVEN"],
+    ["CRFF140YB+WSNW170YB+LSOL220YB_DE","B091FQ57MJ",1,85.97,"UNWANTED_ITEM"],
+    ["S2-CWBO-0U7Z","B0CBMK1KDW",1,78.58,"NOT_COMPATIBLE"],
+    ["LSCY290RE2PK+RPR44WH2PK-R","B0D32YBFXP",1,68.01,"NO_REASON_GIVEN"],
+    ["LDMG95E2783PK A","B09479HV6W",1,65.47,"NOT_COMPATIBLE"],
+    ["LSMS320WH+RPR44WH_","B093T3Q47R",1,65.16,"MISSING_PARTS"],
+    ["SF100BM3PK+PHSQ1PBRYB3PK+LSSS300RE3PK F","B0C6YHB68H",1,63.78,"NOT_COMPATIBLE"],
+    ["CRSF1203WH+PHTT1PWR1WH3PK+SPSPLBM3PK","B09LHV32SZ",2,63.15,"MISSED_ESTIMATED_DELIVERY"],
+    ["PLADBM EOFT","B094R3M2DC",1,62.00,"MISSED_ESTIMATED_DELIVERY"]
+  ],
+  CAD:[
+    ["ENC5355-CHI","B0CG669YQ2",1,120.90,"MISSED_ESTIMATED_DELIVERY"],
+    ["CRSF120BM+PHSH1PBRYB+SCRN70BM+LSFT220YB","B0CL49556C",2,117.26,"ORDERED_WRONG_ITEM"],
+    ["CRSF120BM+PHSH1PBRYB+SCRN70BM+LSFT220RR","B0CL49MY4M",1,117.26,"NOT_COMPATIBLE"],
+    ["LSCY290WH+RPR44WH F","B0CCW29XS8",1,48.19,"NOT_COMPATIBLE"],
+    ["CRSF120BM+PHSH1PBRYB+SCRN70BM+LSFT220BC","B0CL4BSZHJ",2,0.00,"ORDERED_WRONG_ITEM"],
+    ["ICC35E14603PK","B0CGD5N2B9",1,0.00,"AMZ-PG-BAD-DESC"],
+    ["WCTBBM - CA","B0CPXQT8ZY",1,0.00,"DEFECTIVE"],
+    ["CRSF100BM+WSLS155YB+SCRN70BM+LSFT220BM","B0GL2GJ41K",1,0.00,"QUALITY_UNACCEPTABLE"],
+    ["CRSF120RR+PHCH1BMRBM+SCRN70BM+LSFT220RR","B0DJ51PZWP",1,0.00,"NOT_COMPATIBLE"],
+    ["CRSF120YB+PHCH1BMRBM+SCRN70BM+LSFT220YB","B0DJ514MKC",1,0.00,"QUALITY_UNACCEPTABLE"],
+    ["ENC5360","B0CG65JNNS",1,0.00,"DEFECTIVE"],
+    ["ENC9409","B0GL2FHQD8",1,0.00,"AMZ-PG-BAD-DESC"]
+  ],
+  UNSPECIFIED:[
+    ["LSCY290RE+RPR44WH LS","B0D298RPWW",1,381.36,"MISSING_PARTS"],
+    ["CRFF500BM+PHHT1PBRRO3PK+WCWDRO3PK","B097YR1WKC",1,311.92,"MISSING_PARTS"],
+    ["TSST349131GR_HPK","B0FTL8FBDR",1,291.92,"AMZ-PG-BAD-DESC"],
+    ["ENC8910","B0GLQ764TQ",1,156.27,"NOT_COMPATIBLE"],
+    ["CRSF100BM+PHSH1HETYB+LSSS300BI","B09L84F6FZ",1,132.82,"AMZ-PG-BAD-DESC"],
+    ["CRSF100BM+PHSH1PBRBM+LSCY290BI-JJ","B0DLWSWQSS",4,128.95,"DAMAGED_BY_FC"],
+    ["ENC4308S A","B0CNW6MKBF",2,120.01,"NO_REASON_GIVEN"],
+    ["ENC3549 - 1 A","B0B9823VST",1,112.29,"DAMAGED_BY_FC"],
+    ["PLADBC s","B0CNT2ML5D",1,105.48,"AMZ-PG-BAD-DESC"],
+    ["CRSF100CO+PHMU1PBRCO+LSDM220CO","B08WLZZC5C",3,100.00,"UNWANTED_ITEM"],
+    ["LSDO400CB+RPR44WH-DE","B0DSJC2MT4",1,89.45,"ORDERED_WRONG_ITEM"],
+    ["ENC5034 S","B0C7KHY6DV",1,86.89,"NOT_COMPATIBLE"],
+    ["CRSF100BM+PHCHPCRYB+LSCY290YB+ICST64E27","B096FZ186B",2,83.67,"FOUND_BETTER_PRICE"],
+    ["CRFF500CH+WCCY1ROCH3PK_DE","B0CMCP8X1X",2,75.18,"DAMAGED_BY_FC"],
+    ["ENC1910","B0C2CYD3BQ",1,72.52,"AMZ-PG-BAD-DESC"]
+  ]
+};
+
+const EBAY_REASONS = {
+  GBP:[
+    ["WRONG_SIZE",77,22.6,1885.89],["ORDERED_WRONG_ITEM",74,21.8,1412.98],
+    ["NOT_AS_DESCRIBED",55,16.2,1369.72],["ARRIVED_DAMAGED",25,7.4,786.65],
+    ["ORDERED_ACCIDENTALLY",30,8.8,743.91],["NO_LONGER_NEED_ITEM",31,9.1,676.59],
+    ["DEFECTIVE_ITEM",32,9.4,659.41],["ORDERED_DIFFERENT_ITEM",9,2.6,110.34],
+    ["MISSING_PARTS",4,1.2,53.78],["FOUND_BETTER_PRICE",1,0.3,25.88],
+    ["BUYER_NO_SHOW",2,0.6,17.47]
+  ],
+  EUR:[
+    ["WRONG_SIZE",52,37.7,1505.83],["DEFECTIVE_ITEM",13,9.4,359.50],
+    ["ORDERED_WRONG_ITEM",19,13.8,267.36],["ORDERED_DIFFERENT_ITEM",12,8.7,184.76],
+    ["NO_LONGER_NEED_ITEM",9,6.5,179.01],["ORDERED_ACCIDENTALLY",8,5.8,172.40],
+    ["NOT_AS_DESCRIBED",10,7.2,165.98],["ARRIVED_DAMAGED",6,4.3,128.01],
+    ["NO_REASON",6,4.3,85.07],["WITHDRAW_FROM_PURCHASE_CONTRACT",2,1.4,75.11],
+    ["MISSING_PARTS",1,0.7,51.24]
+  ],
+  USD:[
+    ["NOT_AS_DESCRIBED",3,30.0,111.48],["WRONG_SIZE",3,30.0,92.00],
+    ["NO_LONGER_NEED_ITEM",2,20.0,65.21],["ORDERED_WRONG_ITEM",1,10.0,44.99],
+    ["FOUND_BETTER_PRICE",1,10.0,35.09]
+  ],
+  CAD:[
+    ["ORDERED_DIFFERENT_ITEM",1,100.0,118.78]
+  ],
+  UNSPECIFIED:[]
+};
+
+const EBAY_SKUS = {
+  GBP:[
+    ["ENC351",1,411.80,"WRONG_SIZE"],
+    ["12IP20720",2,255.43,"NO_LONGER_NEED_ITEM"],
+    ["LSCAGC800GD",1,222.82,"ARRIVED_DAMAGED"],
+    ["LSCA500SG",1,185.99,"DEFECTIVE_ITEM"],
+    ["LSCA2L400SG",1,154.75,"NO_LONGER_NEED_ITEM"],
+    ["WLRPE27BM3PK+LDA60E278WW3PK",2,151.77,"ORDERED_WRONG_ITEM"],
+    ["LSFT220BU+RPR44WH",3,120.76,"NOT_AS_DESCRIBED"],
+    ["WCCYSP160BM2PK+RPR44WH2PK",4,86.24,"WRONG_SIZE"],
+    ["ENC591",1,82.60,"NOT_AS_DESCRIBED"],
+    ["LSMCP1ULMC2PK+ICST64E272PK",1,73.46,"ARRIVED_DAMAGED"],
+    ["LDMT185E2745PK",1,67.95,"ORDERED_WRONG_ITEM"],
+    ["PHSF1BRRCO",2,66.87,"ORDERED_ACCIDENTALLY"],
+    ["CRSF100GB+CL3TBR+LHSHE27GB",1,64.82,"NOT_AS_DESCRIBED"],
+    ["CRSF2003BM+PHSH1PBRYB3PK+LSFT220NB3PK",1,64.78,"ORDERED_ACCIDENTALLY"],
+    ["WCB7WH+RPR44WH",2,64.72,"WRONG_SIZE"]
+  ],
+  EUR:[
+    ["12IP6715",2,258.75,"ORDERED_WRONG_ITEM"],
+    ["12IP20360",4,229.66,"WRONG_SIZE"],
+    ["24IP20480",3,187.11,"ARRIVED_DAMAGED"],
+    ["12IP20720",3,157.82,"WRONG_SIZE"],
+    ["WLRPE27BM",2,98.94,"ARRIVED_DAMAGED"],
+    ["24IP67200",2,87.99,"ARRIVED_DAMAGED"],
+    ["12IP20300",1,83.37,"WRONG_SIZE"],
+    ["12IP20480",2,74.02,"DEFECTIVE_ITEM"],
+    ["CCBKNWE182PK",3,64.18,"NOT_AS_DESCRIBED"],
+    ["12IP67350",1,58.89,"DEFECTIVE_ITEM"],
+    ["WJBIP68T13BM5PK",1,51.24,"MISSING_PARTS"],
+    ["LHTHE27BN",2,48.79,"NOT_AS_DESCRIBED"],
+    ["12IP6745",1,48.09,"WRONG_SIZE"],
+    ["WJBIP68T13BM2PK",1,42.44,"WRONG_SIZE"],
+    ["CRFF108YB+WSSS70YB+SCRN70YB",2,38.79,"WRONG_SIZE"]
+  ],
+  USD:[
+    ["LDMC35E1445PK",1,49.49,"NOT_AS_DESCRIBED"],
+    ["LHSHE27YB5PK",1,44.99,"ORDERED_WRONG_ITEM"],
+    ["PSOSUS4BMTHE+SPUPBM+SPUWBM+LSHM300HE",1,44.99,"WRONG_SIZE"],
+    ["LSFT220WH+RPR44WH",2,43.86,"NO_LONGER_NEED_ITEM"],
+    ["LSFT220BI+RPR44WH",1,42.72,"NO_LONGER_NEED_ITEM"],
+    ["CL3TGD",1,35.09,"FOUND_BETTER_PRICE"],
+    ["PHUH1HETBM+LSCY290YE",1,35.00,"NOT_AS_DESCRIBED"],
+    ["LSPG250AR+SCRN70YB",1,26.99,"NOT_AS_DESCRIBED"],
+    ["LSCY290WH+RPR44WH",1,25.64,"WRONG_SIZE"]
+  ],
+  CAD:[
+    ["CRSF100CO+LHNSE27CO+LSDM220CO+ICST64E27",1,118.78,"ORDERED_DIFFERENT_ITEM"]
+  ],
+  UNSPECIFIED:[]
+};
+
+/* eBay refund with no matching order line — shown, never dropped */
+const EBAY_UNATTRIBUTED = { GBP:[56.81,2], EUR:[17.98,1], USD:[0,0], CAD:[0,0], UNSPECIFIED:[0,0] };
+
+/* ================================================================
+   RENDER
+   ================================================================ */
+const $ = id => document.getElementById(id);
+const CURRENCIES = ["GBP","EUR","USD","CAD","UNSPECIFIED"];
+
+const money = (v, ccy) =>
+  (SYM[ccy] || "") + v.toLocaleString("en-GB",{minimumFractionDigits:2, maximumFractionDigits:2});
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function bar(pct, max){
+  const w = max > 0 ? Math.max((pct / max) * 100, 1.5) : 0;
+  return `<div class="bar-row">
+            <div class="track"><div class="fill" style="width:${w.toFixed(1)}%"></div></div>
+            <span class="pct">${pct.toFixed(1)}%</span>
+          </div>`;
+}
+
+const EMPTY = `<tbody><tr><td class="empty">No returns recorded in this currency group.</td></tr></tbody>`;
+
+function reasonTable(el, rows, ccy){
+  if(!rows.length){ el.innerHTML = EMPTY; return; }
+  const maxPct = Math.max(...rows.map(r => r[2]));
+  el.innerHTML = `
+    <thead><tr>
+      <th class="rank">#</th><th>Reason</th>
+      <th class="num">Return Count</th>
+      <th class="barcell">% of Return Count</th>
+      <th class="num">Refunded Amount</th>
+    </tr></thead>
+    <tbody>${rows.map((r,i) => `
+      <tr class="${i < 3 ? "hot" : ""}">
+        <td class="rank">${i+1}</td>
+        <td class="reason">${esc(r[0])}</td>
+        <td class="num">${r[1].toLocaleString("en-GB")}</td>
+        <td class="barcell">${bar(r[2], maxPct)}</td>
+        <td class="num money">${money(r[3], ccy)}</td>
+      </tr>`).join("")}
+    </tbody>`;
+}
+
+function amzSkuTable(el, rows, ccy){
+  if(!rows.length){ el.innerHTML = EMPTY; return; }
+  el.innerHTML = `
+    <thead><tr>
+      <th class="rank">#</th><th>SKU</th><th>ASIN</th>
+      <th class="num">Return Count</th>
+      <th class="num">Refund Value</th>
+      <th>Top Reason</th>
+    </tr></thead>
+    <tbody>${rows.map((r,i) => `
+      <tr class="${i < 3 ? "hot" : ""}">
+        <td class="rank">${i+1}</td>
+        <td class="mono">${esc(r[0])}</td>
+        <td class="mono muted">${esc(r[1] ?? "—")}</td>
+        <td class="num">${r[2].toLocaleString("en-GB")}</td>
+        <td class="num money">${money(r[3], ccy)}</td>
+        <td class="muted">${esc(r[4] ?? "—")}</td>
+      </tr>`).join("")}
+    </tbody>`;
+}
+
+function ebySkuTable(el, rows, ccy){
+  if(!rows.length){ el.innerHTML = EMPTY; return; }
+  el.innerHTML = `
+    <thead><tr>
+      <th class="rank">#</th><th>SKU</th>
+      <th class="num">Return Count</th>
+      <th class="num">Refund</th>
+      <th>Currency</th>
+      <th>Top Reason</th>
+    </tr></thead>
+    <tbody>${rows.map((r,i) => `
+      <tr class="${i < 3 ? "hot" : ""}">
+        <td class="rank">${i+1}</td>
+        <td class="mono">${esc(r[0])}</td>
+        <td class="num">${r[1].toLocaleString("en-GB")}</td>
+        <td class="num money">${money(r[2], ccy)}</td>
+        <td class="muted">${ccy}</td>
+        <td class="muted">${esc(r[3] ?? "—")}</td>
+      </tr>`).join("")}
+    </tbody>`;
+}
+
+function kpis(el, rows, ccy, platform){
+  const totalReturns = rows.reduce((a,r) => a + r[1], 0);
+  const totalRefund  = rows.reduce((a,r) => a + r[3], 0);
+  const top          = rows[0];
+  const last = platform === "amz"
+    ? { k:"Top Reason", v: top ? esc(top[0]) : "—", sub: top ? money(top[3], ccy) + " refunded" : "", sm:true }
+    : { k:"Currency Groups", v: "4", sub:"GBP · EUR · USD · CAD", sm:false };
+
+  el.innerHTML = [
+    { k:"Return Reasons", v: rows.length,                       sub:"distinct reasons" },
+    { k:"Total Returns",  v: totalReturns.toLocaleString("en-GB"), sub:"return records" },
+    { k:"Total Refunded", v: money(totalRefund, ccy),           sub: ccy === "UNSPECIFIED" ? "currency not recorded" : ccy },
+    last
+  ].map(c => `
+    <div class="kpi">
+      <p class="k">${c.k}</p>
+      <div class="v ${c.sm ? "sm" : ""}">${c.v}</div>
+      <div class="sub">${c.sub || "&nbsp;"}</div>
+    </div>`).join("");
+}
+
+function render(){
+  const ccy = $("ccy").value;
+
+  kpis($("kpi-amz"), AMAZON_REASONS[ccy] || [], ccy, "amz");
+  kpis($("kpi-eby"), EBAY_REASONS[ccy]  || [], ccy, "eby");
+
+  reasonTable($("t-amz-reason"), AMAZON_REASONS[ccy] || [], ccy);
+  amzSkuTable($("t-amz-sku"),    AMAZON_SKUS[ccy]    || [], ccy);
+  reasonTable($("t-eby-reason"), EBAY_REASONS[ccy]   || [], ccy);
+  ebySkuTable($("t-eby-sku"),    EBAY_SKUS[ccy]      || [], ccy);
+
+  const [amt, n] = EBAY_UNATTRIBUTED[ccy] || [0,0];
+  $("eby-sku-note").innerHTML = n
+    ? `<span class="unattr">Unattributed: ${money(amt, ccy)} across ${n} return${n>1?"s":""}</span> — no matching order line in <span class="mono">order_transaction</span>. Included in the reason totals above, excluded from the SKU rows.`
+    : `All eBay refunds in this currency resolved to a SKU. SKU total reconciles to the reason total exactly.`;
+}
+
+/* ---------- CSV ---------- */
+function csv(){
+  const ccy = $("ccy").value;
+  const q = v => `"${String(v).replace(/"/g,'""')}"`;
+  const L = [];
+  L.push(q(`Returns Reason Hotspot Report — generated ${GENERATED_AT} — currency ${ccy} — snapshot, not live`));
+  L.push("");
+  L.push(q("Amazon — Return Reasons Summary"));
+  L.push(["Rank","Reason","Return Count","% of Total","Refunded Amount","Currency"].map(q).join(","));
+  (AMAZON_REASONS[ccy]||[]).forEach((r,i) => L.push([i+1,r[0],r[1],r[2],r[3].toFixed(2),ccy].map(q).join(",")));
+  L.push("");
+  L.push(q("Amazon — Top 15 SKUs by Refund Value"));
+  L.push(["Rank","SKU","ASIN","Return Count","Refund Value","Currency","Top Reason"].map(q).join(","));
+  (AMAZON_SKUS[ccy]||[]).forEach((r,i) => L.push([i+1,r[0],r[1],r[2],r[3].toFixed(2),ccy,r[4]].map(q).join(",")));
+  L.push("");
+  L.push(q("eBay — Return Reasons Summary"));
+  L.push(["Rank","Reason","Return Count","% of Total","Refunded Amount","Currency"].map(q).join(","));
+  (EBAY_REASONS[ccy]||[]).forEach((r,i) => L.push([i+1,r[0],r[1],r[2],r[3].toFixed(2),ccy].map(q).join(",")));
+  L.push("");
+  L.push(q("eBay — Top 15 SKUs by Refund Value"));
+  L.push(["Rank","SKU","Return Count","Refund","Currency","Top Reason"].map(q).join(","));
+  (EBAY_SKUS[ccy]||[]).forEach((r,i) => L.push([i+1,r[0],r[1],r[2].toFixed(2),ccy,r[3]].map(q).join(",")));
+  const [amt,n] = EBAY_UNATTRIBUTED[ccy] || [0,0];
+  if(n) L.push([`Unattributed (${n} returns, no matching order line)`,"","",amt.toFixed(2),ccy,""].map(q).join(","));
+
+  const blob = new Blob(["﻿" + L.join("\r\n")], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `returns_hotspot_${ccy}_${GENERATED_AT}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast(`Exported ${ccy} tables to CSV`);
+}
+
+let tid;
+function toast(msg){
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(tid);
+  tid = setTimeout(() => t.classList.remove("show"), 3200);
+}
+
+/* ---------- boot ---------- */
+$("gen").textContent = GENERATED_AT;
+$("ccy").innerHTML = CURRENCIES.map(c =>
+  `<option value="${c}">${c === "UNSPECIFIED" ? "Not recorded" : c}</option>`).join("");
+$("ccy").value = "GBP";
+
+$("ccy").addEventListener("change", render);
+$("btn-print").addEventListener("click", () => window.print());
+$("btn-csv").addEventListener("click", csv);
+$("btn-refresh").addEventListener("click", () => {
+  render();
+  toast("Re-rendered from embedded data — this file does not re-query PostgreSQL.");
+});
+
+render();
+</script>
+</body>
+</html>
