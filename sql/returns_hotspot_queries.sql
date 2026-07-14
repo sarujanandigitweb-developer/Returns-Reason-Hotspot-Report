@@ -1,57 +1,79 @@
--- Returns Reason Hotspot Report — the four queries as actually executed, 2026-07-14.
+-- ============================================================================
+-- Returns Reason Hotspot Report — the four queries that build the dashboard.
+-- Read and executed by scripts/refresh_dashboard.py. Query blocks are delimited
+-- by "-- name:" markers; the script splits on those, so keep them intact.
+--
 -- Window: request_date >= CURRENT_DATE - INTERVAL '3 months'
 --
--- These differ from the task brief's Step 1-4 in three ways. Each deviation is
--- there to fix a defect in the brief's SQL, not for style. See
--- duplicate-risk-reports/DR-001 and validation/reconciliation.md.
+-- BUSINESS RULES (unchanged — see duplicate-risk-reports/DR-001 and
+-- validation/reconciliation.md):
+--   * res_his_order = 0 on ebay_returns is mandatory. Without it the window
+--     returns 5,064 rows instead of 489 — a 10x inflation from history rows.
+--   * eBay has no sku column. SKU is resolved from order_transaction on
+--     order_id + item_id (NOT order_id alone, which fans out across basket line
+--     items and overstates eBay SKU refunds by +12.7%).
+--   * Where one eBay item_id maps to several SKUs (a variation listing), the
+--     refund AND the units are split evenly across them. Returns with no
+--     matching order line surface as an explicit UNATTRIBUTED row.
+--   * Every query groups by currency. Both platforms are multi-currency;
+--     totals are NEVER summed across currencies, and Amazon is NEVER combined
+--     with eBay.
+--   * Amazon reason codes carry a CR- prefix inconsistently. It is stripped
+--     mechanically so the same reason does not split across two rows.
 --
---   1. Every query groups by currency. Both platforms are multi-currency in this
---      window (Amazon: GBP/USD/EUR/CAD + 677 rows with no currency recorded).
---      The brief's Step 1/2 SUM(refunded_amount) with no currency grouping adds
---      pounds to dollars to euros and labels the result "£".
---   2. eBay SKU is resolved on order_id + item_id, not order_id alone. The brief's
---      Step 4 join fans out across basket line items and overstates eBay SKU
---      refunds by +12.7%.
---   3. Amazon reason has its CR- prefix stripped, because the same reason appears
---      in the data both with and without it and would otherwise split into two rows.
+-- ORDERING: each query ends with a deterministic tie-break (sku / reason).
+-- Ties on refund+count are common (many rows share an identical refund), and
+-- without a tie-break PostgreSQL returns them in an arbitrary order — so a
+-- scheduled refresh would reshuffle rows, and their rank numbers and the top-3
+-- highlighting, every single morning without any data having changed.
+-- The tie-break changes no value and no refund-descending order; it only makes
+-- the result reproducible.
+-- ============================================================================
 
 
--- ============================================================================
--- 1. AMAZON — Return Reasons Summary (per currency)
--- ============================================================================
+-- name: amazon_reasons
+-- columns: ccy, reason, return_count, pct_of_count, total_refunded, units, last_return
 WITH base AS (
     SELECT COALESCE("currency", 'UNSPECIFIED')       AS ccy,
            regexp_replace("reason", '^CR-', '')      AS reason,
-           COALESCE("refunded_amount", 0)            AS amt
+           COALESCE("refunded_amount", 0)            AS amt,
+           COALESCE("qty", 0)                        AS q,
+           "request_date"
     FROM public.amazon_returns
     WHERE "request_date" >= CURRENT_DATE - INTERVAL '3 months'
 )
 SELECT ccy,
        reason,
-       COUNT(*)                                                                     AS return_count,
+       COUNT(*)                                                                      AS return_count,
        ROUND((COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY ccy))::numeric, 1) AS pct_of_count,
-       ROUND(SUM(amt)::numeric, 2)                                                   AS total_refunded
+       ROUND(SUM(amt)::numeric, 2)                                                   AS total_refunded,
+       SUM(q)::int                                                                   AS units,
+       MAX("request_date")::text                                                     AS last_return
 FROM base
 GROUP BY ccy, reason
-ORDER BY ccy, total_refunded DESC;
+ORDER BY ccy, total_refunded DESC, reason;
 
 
--- ============================================================================
--- 2. AMAZON — Top 15 SKUs by Refund Value (per currency, + most common reason)
--- ============================================================================
+-- name: amazon_skus
+-- columns: ccy, sku, asin, return_count, total_refunded, top_reason, units, marketplace, last_return
 WITH base AS (
     SELECT COALESCE("currency", 'UNSPECIFIED')  AS ccy,
            "sku", "asin",
            regexp_replace("reason", '^CR-', '') AS reason,
-           COALESCE("refunded_amount", 0)       AS amt
+           COALESCE("refunded_amount", 0)       AS amt,
+           COALESCE("qty", 0)                   AS q,
+           "market_place", "request_date"
     FROM public.amazon_returns
     WHERE "request_date" >= CURRENT_DATE - INTERVAL '3 months'
       AND "sku" IS NOT NULL
 ),
 sku_agg AS (
     SELECT ccy, "sku", "asin",
-           COUNT(*)                    AS return_count,
-           ROUND(SUM(amt)::numeric, 2) AS total_refunded
+           COUNT(*)                                            AS return_count,
+           ROUND(SUM(amt)::numeric, 2)                         AS total_refunded,
+           SUM(q)::int                                         AS units,
+           MODE() WITHIN GROUP (ORDER BY "market_place")       AS marketplace,
+           MAX("request_date")::text                           AS last_return
     FROM base
     GROUP BY ccy, "sku", "asin"
 ),
@@ -61,60 +83,49 @@ top_reason AS (
     FROM base
     GROUP BY ccy, "sku", "asin", reason
     ORDER BY ccy, "sku", "asin", COUNT(*) DESC, reason
-),
-ranked AS (
-    SELECT a.*, t.top_reason,
-           ROW_NUMBER() OVER (PARTITION BY a.ccy
-                              ORDER BY a.total_refunded DESC, a.return_count DESC) AS rn
-    FROM sku_agg a
-    LEFT JOIN top_reason t USING (ccy, "sku", "asin")
 )
-SELECT ccy, "sku", "asin", return_count, total_refunded, top_reason
-FROM ranked
-WHERE rn <= 15
-ORDER BY ccy, total_refunded DESC;
+SELECT a.ccy, a."sku", a."asin", a.return_count, a.total_refunded,
+       t.top_reason, a.units, a.marketplace, a.last_return
+FROM sku_agg a
+LEFT JOIN top_reason t USING (ccy, "sku", "asin")
+ORDER BY a.ccy, a.total_refunded DESC, a.return_count DESC, a."sku";
 
 
--- ============================================================================
--- 3. eBAY — Return Reasons Summary (per currency)
---    res_his_order = 0 is mandatory: without it the window returns 5,064 rows
---    instead of 489 (resolution-history rows, a 10x inflation).
--- ============================================================================
+-- name: ebay_reasons
+-- columns: ccy, reason, return_count, pct_of_count, total_refunded, units, last_return
 SELECT COALESCE("seller_currency", 'UNSPECIFIED') AS ccy,
        "reason",
        COUNT(*) AS return_count,
        ROUND((COUNT(*) * 100.0
               / SUM(COUNT(*)) OVER (PARTITION BY COALESCE("seller_currency", 'UNSPECIFIED')))::numeric, 1)
-                                                  AS pct_of_count,
-       ROUND(SUM(COALESCE("seller_refund_amount", 0))::numeric, 2) AS total_refunded
+                                                                   AS pct_of_count,
+       ROUND(SUM(COALESCE("seller_refund_amount", 0))::numeric, 2) AS total_refunded,
+       SUM(COALESCE("return_qty", 0))::int                         AS units,
+       MAX("request_date")::date::text                             AS last_return
 FROM public.ebay_returns
 WHERE "res_his_order" = 0
   AND "request_date" >= CURRENT_DATE - INTERVAL '3 months'
 GROUP BY 1, 2
-ORDER BY ccy, total_refunded DESC;
+ORDER BY ccy, total_refunded DESC, "reason";
 
 
--- ============================================================================
--- 4. eBAY — Top 15 SKUs by Refund Value (per currency)
---    Refund attributed to the ACTUAL returned line via order_id + item_id.
---    Where one item_id still maps to several SKUs (a variation listing: one eBay
---    listing, several sizes/colours), the refund is split evenly across them.
---    Returns with no matching order line surface as an explicit UNATTRIBUTED row
---    rather than being silently dropped.
---    This reconciles to query 3 exactly, per currency. The brief's version does not.
--- ============================================================================
+-- name: ebay_skus
+-- columns: ccy, sku, return_count, total_refunded, top_reason, units, marketplace, last_return
 WITH ret AS (
     SELECT r."id", r."order_id", r."item_id", r."reason",
+           r."market_place_code", r."request_date",
            COALESCE(r."seller_currency", 'UNSPECIFIED') AS ccy,
-           COALESCE(r."seller_refund_amount", 0)        AS amt
+           COALESCE(r."seller_refund_amount", 0)        AS amt,
+           COALESCE(r."return_qty", 0)                  AS q
     FROM public.ebay_returns r
     WHERE r."res_his_order" = 0
       AND r."request_date" >= CURRENT_DATE - INTERVAL '3 months'
 ),
 matched AS (
-    SELECT r."id", r.ccy, r.amt, r."reason",
+    SELECT r."id", r.ccy, r."reason", r."market_place_code", r."request_date",
            COALESCE(m."sku", '(UNATTRIBUTED — no matching order line)') AS sku,
-           r.amt / GREATEST(m.n, 1)                                     AS alloc
+           r.amt / GREATEST(m.n, 1) AS alloc,      -- refund split evenly across variation SKUs
+           r.q   / GREATEST(m.n, 1) AS ualloc      -- units split the same way, for consistency
     FROM ret r
     LEFT JOIN LATERAL (
         SELECT ot."sku", COUNT(*) OVER () AS n
@@ -128,8 +139,11 @@ matched AS (
 ),
 sku_agg AS (
     SELECT ccy, sku,
-           COUNT(DISTINCT "id")          AS return_count,
-           ROUND(SUM(alloc)::numeric, 2) AS total_refunded
+           COUNT(DISTINCT "id")                                     AS return_count,
+           ROUND(SUM(alloc)::numeric, 2)                            AS total_refunded,
+           ROUND(SUM(ualloc)::numeric, 1)                           AS units,
+           MODE() WITHIN GROUP (ORDER BY "market_place_code")       AS marketplace,
+           MAX("request_date")::date::text                          AS last_return
     FROM matched
     GROUP BY ccy, sku
 ),
@@ -138,15 +152,9 @@ top_reason AS (
     FROM matched
     GROUP BY ccy, sku, "reason"
     ORDER BY ccy, sku, COUNT(*) DESC, "reason"
-),
-ranked AS (
-    SELECT a.*, t.top_reason,
-           ROW_NUMBER() OVER (PARTITION BY a.ccy
-                              ORDER BY a.total_refunded DESC, a.return_count DESC) AS rn
-    FROM sku_agg a
-    LEFT JOIN top_reason t USING (ccy, sku)
 )
-SELECT ccy, sku, return_count, total_refunded, top_reason
-FROM ranked
-WHERE rn <= 15
-ORDER BY ccy, total_refunded DESC;
+SELECT a.ccy, a.sku, a.return_count, a.total_refunded,
+       t.top_reason, a.units, a.marketplace, a.last_return
+FROM sku_agg a
+LEFT JOIN top_reason t USING (ccy, sku)
+ORDER BY a.ccy, a.total_refunded DESC, a.return_count DESC, a.sku;

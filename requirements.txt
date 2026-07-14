@@ -1,0 +1,13 @@
+# Returns Reason Hotspot Dashboard — refresh script dependencies
+#
+#   pip install -r requirements.txt
+#
+# On Debian/Ubuntu, pip may refuse a system-wide install (PEP 668). Either use
+# the distro packages:
+#
+#   sudo apt install python3-dotenv python3-psycopg2
+#
+# ...or install into a virtualenv and point the cron job at that interpreter.
+
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9.0

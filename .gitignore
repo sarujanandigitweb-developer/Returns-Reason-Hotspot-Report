@@ -1,0 +1,13 @@
+# Never commit credentials
+.env
+
+# Refresh artefacts
+logs/
+backups/
+*.html.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
