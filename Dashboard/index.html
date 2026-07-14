@@ -292,14 +292,32 @@
       radial-gradient(farthest-side at   0% 50%, var(--scroll-sh), transparent) left  center / 15px 100% no-repeat scroll,
       radial-gradient(farthest-side at 100% 50%, var(--scroll-sh), transparent) right center / 15px 100% no-repeat scroll;
   }
-  /* 1560px is the width at which the narrowest headers (Marketplace 6.6%, Return
-     Count 7.6%) still fit on one line. Below it the table scrolls sideways rather
-     than wrapping "MARKETPLACE" mid-word. */
-  table{border-collapse:separate;border-spacing:0;width:100%;min-width:1560px;table-layout:fixed;font-size:13.5px}
+  /* RESPONSIVE CORE.
+     One fluid type size drives the whole grid. Every metric below (column padding,
+     row height, chip size, bar track, min-width) is expressed in em, so shrinking
+     this single number scales the entire table proportionally — and because the
+     column widths are percentages, the grid stays aligned at every size.
+
+     13.5px at >=1500px viewport, easing to 10.5px at ~500px. clamp() interpolates
+     the middle, so it is continuous: there is no jump at a breakpoint.
+
+     min-width is in em too, so the sideways-scroll floor drops as the type does,
+     instead of being pinned at a fixed 1560px. Column count also drops as the
+     window narrows (see PRI in the script) — that is what actually lets the table
+     fit, since ten readable columns will never fit a phone. */
+  table{
+    border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;
+    font-size:clamp(10.5px, 0.3vw + 9px, 13.5px);
+    min-width:78em;
+  }
+  /* Fewer columns survive at each step down, so the floor can come down with them.
+     These keep the table fitting its container rather than scrolling. */
+  @media (max-width:1420px){ table{min-width:66em} }   /* pri<=2 — 6 columns */
+  @media (max-width:900px) { table{min-width:52em} }   /* pri<=1 — 4 columns */
   thead th{
     position:sticky;top:0;z-index:2;
-    text-align:left;font-weight:700;font-size:10px;letter-spacing:.04em;text-transform:uppercase;
-    color:var(--th-ink);background:var(--th-bg);padding:0 10px;height:52px;
+    text-align:left;font-weight:700;font-size:.75em;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--th-ink);background:var(--th-bg);padding:0 .75em;height:3.9em;
     /* The narrow columns (Marketplace 6.6%, Currency 5.7%) only hold their header on
        one line at this type size — hence 10px/.04em and the 1400px table floor below.
        Wrapping stays enabled as a safety net so a header can never clip; break-word is
@@ -334,11 +352,11 @@
   /* Identical box metrics on every cell in every table — header 52px, body rows
      a uniform 44px, same 14px horizontal padding throughout. */
   tbody td{
-    padding:0 10px;height:44px;border-bottom:1px solid var(--line-2);vertical-align:middle;
+    padding:0 .75em;height:3.26em;border-bottom:1px solid var(--line-2);vertical-align:middle;
   }
   /* Fixed layout clips overflow, so long free-text values (SKUs, reasons) must be
      allowed to break rather than spill into the next column. */
-  td.tx{overflow-wrap:anywhere;line-height:1.35;padding-top:8px;padding-bottom:8px}
+  td.tx{overflow-wrap:anywhere;line-height:1.35;padding-top:.6em;padding-bottom:.6em}
   tbody tr{transition:background .12s ease}
   tbody tr:nth-child(even){background:var(--surface-3)}
   tbody tr.hot{background:var(--hot);box-shadow:inset 3px 0 0 var(--hot-edge)}
@@ -349,11 +367,11 @@
   .rk.top{color:var(--hot-edge);font-weight:700}
   .money{font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
   .n{font-variant-numeric:tabular-nums;white-space:nowrap}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.93em}
   .rsn{font-weight:600}
   .mut{color:var(--ink-3)}
   .chip{
-    display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px;
+    display:inline-block;font-size:.82em;font-weight:600;padding:.16em .52em;border-radius:5px;
     background:var(--chip-bg);color:var(--chip-ink);white-space:nowrap;
   }
   .unattr{color:var(--hot-edge);font-style:italic}
@@ -365,10 +383,10 @@
      (spare width in the column becomes real spacing), but still shrink if the
      column is made narrow (so it can't overflow). The bar + label form a fixed
      block pinned to the right, under the right-aligned header. */
-  .bar{display:flex;align-items:center;gap:9px;justify-content:flex-end}
-  .trk{flex:0 1 110px;height:6px;background:var(--track);border-radius:4px;overflow:hidden;min-width:40px}
+  .bar{display:flex;align-items:center;gap:.67em;justify-content:flex-end}
+  .trk{flex:0 1 8.1em;height:6px;background:var(--track);border-radius:4px;overflow:hidden;min-width:3em}
   .fil{height:100%;background:var(--accent);border-radius:0 4px 4px 0}
-  .pct{font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:12.5px;width:44px;text-align:right;flex:none}
+  .pct{font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:.93em;width:3.5em;text-align:right;flex:none}
   .none{padding:44px 16px;text-align:center;color:var(--ink-3)}
 
   /* ---------------- pagination ---------------- */
@@ -411,6 +429,8 @@
     font-size:12.5px;color:var(--chip-ink);
   }
   .scope b{font-weight:650}
+  /* columns hidden for width are announced, not silently dropped */
+  .hidcols{color:var(--hot-edge);font-weight:600}
 
   footer{margin-top:28px;display:flex;flex-wrap:wrap;gap:8px 20px;font-size:12px;color:var(--ink-3)}
   footer span{display:flex;align-items:center;gap:6px}
@@ -671,57 +691,57 @@ const REC = build();
 const TABS = [
   { id:"t1", plat:"Amazon", name:"Return Reasons Summary", src:"amzReasons", kind:"reason",
     cols:[
-      {k:"rank",   label:"#",                 cls:"rk",     type:"rank",  w:4,  al:"c"},
-      {k:"reason", label:"Reason",            cls:"rsn",    type:"text",  w:18, al:"l"},
-      {k:"count",  label:"Return Count",      cls:"n",      type:"num",   w:8,  al:"r", sort:true},
-      {k:"units",  label:"Units",             cls:"n",      type:"units", w:11, al:"r"},
-      {k:"pct",    label:"% of Return Count", cls:"barw",   type:"bar",   w:16, al:"r"},
-      {k:"refund", label:"Refunded Amount",   cls:"money",  type:"money", w:16, al:"r", sort:true},
-      {k:"last",   label:"Last Return",       cls:"mut",    type:"date",  w:14, al:"c"},
-      {k:"ccy",    label:"Currency",          cls:"",       type:"chip",  w:13, al:"c"}
+      {k:"rank",   label:"#",                 cls:"rk",     type:"rank",  w:4,  al:"c", pri:1},
+      {k:"reason", label:"Reason",            cls:"rsn",    type:"text",  w:18, al:"l", pri:1},
+      {k:"count",  label:"Return Count",      cls:"n",      type:"num",   w:8,  al:"r", sort:true, pri:1},
+      {k:"units",  label:"Units",             cls:"n",      type:"units", w:11, al:"r", pri:3},
+      {k:"pct",    label:"% of Return Count", cls:"barw",   type:"bar",   w:16, al:"r", pri:2},
+      {k:"refund", label:"Refunded Amount",   cls:"money",  type:"money", w:16, al:"r", sort:true, pri:1},
+      {k:"last",   label:"Last Return",       cls:"mut",    type:"date",  w:14, al:"c", pri:3},
+      {k:"ccy",    label:"Currency",          cls:"",       type:"chip",  w:13, al:"c", pri:3}
     ]},
   { id:"t2", plat:"Amazon", name:"SKU Refund Analysis", src:"amzSkus", kind:"sku",
     cols:[
-      {k:"rank",     label:"#",            cls:"rk",      type:"rank",  w:3.8,  al:"c"},
-      {k:"sku",      label:"SKU",          cls:"mono",    type:"text",  w:24.5, al:"l"},
-      {k:"asin",     label:"ASIN",         cls:"mono mut",type:"text",  w:11.3, al:"l"},
-      {k:"mkt",      label:"Marketplace",  cls:"",        type:"chip2", w:6.6,  al:"c"},
-      {k:"count",    label:"Return Count", cls:"n",       type:"num",   w:7.6,  al:"r", sort:true},
-      {k:"units",    label:"Units",        cls:"n",       type:"units", w:6.6,  al:"r"},
-      {k:"refund",   label:"Refund Value", cls:"money",   type:"money", w:11.3, al:"r", sort:true},
-      {k:"topReason",label:"Top Reason",   cls:"mut",     type:"text",  w:13.2, al:"l"},
-      {k:"last",     label:"Last Return",  cls:"mut",     type:"date",  w:9.4,  al:"c"},
-      {k:"ccy",      label:"Currency",     cls:"",        type:"chip",  w:5.7,  al:"c"}
+      {k:"rank",     label:"#",            cls:"rk",      type:"rank",  w:3.8,  al:"c", pri:1},
+      {k:"sku",      label:"SKU",          cls:"mono",    type:"text",  w:24.5, al:"l", pri:1},
+      {k:"asin",     label:"ASIN",         cls:"mono mut",type:"text",  w:11.3, al:"l", pri:3},
+      {k:"mkt",      label:"Marketplace",  cls:"",        type:"chip2", w:6.6,  al:"c", pri:2},
+      {k:"count",    label:"Return Count", cls:"n",       type:"num",   w:7.6,  al:"r", sort:true, pri:1},
+      {k:"units",    label:"Units",        cls:"n",       type:"units", w:6.6,  al:"r", pri:3},
+      {k:"refund",   label:"Refund Value", cls:"money",   type:"money", w:11.3, al:"r", sort:true, pri:1},
+      {k:"topReason",label:"Top Reason",   cls:"mut",     type:"text",  w:13.2, al:"l", pri:2},
+      {k:"last",     label:"Last Return",  cls:"mut",     type:"date",  w:9.4,  al:"c", pri:3},
+      {k:"ccy",      label:"Currency",     cls:"",        type:"chip",  w:5.7,  al:"c", pri:3}
     ]},
   { id:"t3", plat:"eBay", name:"Return Reasons Summary", src:"ebyReasons", kind:"reason",
     cols:[
-      {k:"rank",   label:"#",                 cls:"rk",     type:"rank",  w:4,  al:"c"},
-      {k:"reason", label:"Reason",            cls:"rsn",    type:"text",  w:18, al:"l"},
-      {k:"count",  label:"Return Count",      cls:"n",      type:"num",   w:8,  al:"r", sort:true},
-      {k:"units",  label:"Units",             cls:"n",      type:"units", w:11, al:"r"},
-      {k:"pct",    label:"% of Return Count", cls:"barw",   type:"bar",   w:16, al:"r"},
-      {k:"refund", label:"Refund",            cls:"money",  type:"money", w:16, al:"r", sort:true},
-      {k:"last",   label:"Last Return",       cls:"mut",    type:"date",  w:14, al:"c"},
-      {k:"ccy",    label:"Currency",          cls:"",       type:"chip",  w:13, al:"c"}
+      {k:"rank",   label:"#",                 cls:"rk",     type:"rank",  w:4,  al:"c", pri:1},
+      {k:"reason", label:"Reason",            cls:"rsn",    type:"text",  w:18, al:"l", pri:1},
+      {k:"count",  label:"Return Count",      cls:"n",      type:"num",   w:8,  al:"r", sort:true, pri:1},
+      {k:"units",  label:"Units",             cls:"n",      type:"units", w:11, al:"r", pri:3},
+      {k:"pct",    label:"% of Return Count", cls:"barw",   type:"bar",   w:16, al:"r", pri:2},
+      {k:"refund", label:"Refund",            cls:"money",  type:"money", w:16, al:"r", sort:true, pri:1},
+      {k:"last",   label:"Last Return",       cls:"mut",    type:"date",  w:14, al:"c", pri:3},
+      {k:"ccy",    label:"Currency",          cls:"",       type:"chip",  w:13, al:"c", pri:3}
     ]},
   { id:"t4", plat:"eBay", name:"SKU Refund Analysis", src:"ebySkus", kind:"sku",
     cols:[
-      {k:"rank",     label:"#",            cls:"rk",    type:"rank",  w:3.8,  al:"c"},
-      {k:"sku",      label:"SKU",          cls:"mono",  type:"text",  w:35.8, al:"l"},  /* 24.5 + eBay's unused ASIN 11.3 */
-      {k:"mkt",      label:"Marketplace",  cls:"",      type:"chip2", w:6.6,  al:"c"},
-      {k:"count",    label:"Return Count", cls:"n",     type:"num",   w:7.6,  al:"r", sort:true},
-      {k:"units",    label:"Units",        cls:"n",     type:"units", w:6.6,  al:"r"},
-      {k:"refund",   label:"Refund",       cls:"money", type:"money", w:11.3, al:"r", sort:true},
-      {k:"topReason",label:"Top Reason",   cls:"mut",   type:"text",  w:13.2, al:"l"},
-      {k:"last",     label:"Last Return",  cls:"mut",   type:"date",  w:9.4,  al:"c"},
-      {k:"ccy",      label:"Currency",     cls:"",      type:"chip",  w:5.7,  al:"c"}
+      {k:"rank",     label:"#",            cls:"rk",    type:"rank",  w:3.8,  al:"c", pri:1},
+      {k:"sku",      label:"SKU",          cls:"mono",  type:"text",  w:25.8, al:"l", pri:1},  /* 24.5 + eBay's unused ASIN 11.3 */
+      {k:"mkt",      label:"Marketplace",  cls:"",      type:"chip2", w:8.6,  al:"c", pri:2},
+      {k:"count",    label:"Return Count", cls:"n",     type:"num",   w:7.6,  al:"r", sort:true, pri:1},
+      {k:"units",    label:"Units",        cls:"n",     type:"units", w:8.6,  al:"r", pri:3},
+      {k:"refund",   label:"Refund",       cls:"money", type:"money", w:12.3, al:"r", sort:true, pri:1},
+      {k:"topReason",label:"Top Reason",   cls:"mut",   type:"text",  w:18.2, al:"l", pri:2},
+      {k:"last",     label:"Last Return",  cls:"mut",   type:"date",  w:9.4,  al:"c", pri:3},
+      {k:"ccy",      label:"Currency",     cls:"",      type:"chip",  w:5.7,  al:"c", pri:3}
     ]}
 ];
 
 /* ---------- per-tab UI state ---------- */
 const ST = {};
 TABS.forEach(t => ST[t.id] = {
-  ccy:"GBP", q:"", reason:"", minR:"", maxR:"", minC:"",
+  ccy:"GBP", q:"", reason:"", minC:"",
   sortKey:"refund", sortDir:"desc", page:1, per:25
 });
 let ACTIVE = TABS[0].id;
@@ -746,13 +766,10 @@ function rowsFor(tab){ return REC[tab.src][ST[tab.id].ccy] || []; }
 function filtered(tab){
   const s = ST[tab.id];
   const q = s.q.trim().toLowerCase();
-  const minR = s.minR === "" ? -Infinity : parseFloat(s.minR);
-  const maxR = s.maxR === "" ?  Infinity : parseFloat(s.maxR);
   const minC = s.minC === "" ? -Infinity : parseFloat(s.minC);
 
   let out = rowsFor(tab).filter(r => {
-    if(r.refund < minR || r.refund > maxR) return false;
-    if(r.count  < minC) return false;
+    if(r.count < minC) return false;
     if(s.reason && (r.reason ?? r.topReason) !== s.reason) return false;
     if(q){
       const hay = [r.sku, r.asin, r.reason, r.topReason, r.ccy].filter(Boolean).join(" ").toLowerCase();
@@ -846,17 +863,59 @@ TABS.forEach(t => {
                  `the browser will rescale every column proportionally. Adjust so they sum to 100.`);
 });
 
+/* ---------- responsive columns ----------
+   Type and spacing scale with the viewport (see the clamp() on `table` in the CSS),
+   but ten readable columns will never fit a narrow window however small the type
+   gets. So columns drop by priority as the window shrinks:
+
+     pri 1  the decision itself — rank, what (reason/SKU), how many, how much
+     pri 2  supporting context   — the % bar, Marketplace, Top Reason
+     pri 3  detail              — Units, ASIN, Last Return, Currency
+
+   Currency is pri 3 because the table is already scoped to ONE currency and the
+   banner above says which — the column repeats that value on every row.
+
+   Below the card breakpoint every column comes back: rows restack vertically as
+   cards, so horizontal width stops being the constraint.
+
+   Hiding is presentation only. tab.cols is never mutated, so CSV export and print
+   still carry every column. */
+const BP = { card:660, narrow:900, wide:1420 };
+function maxPri(){
+  const w = window.innerWidth;
+  if(w <= BP.card)   return 3;   // cards — width is free again
+  if(w <  BP.narrow) return 1;
+  if(w <  BP.wide)   return 2;
+  return 3;
+}
+function visibleCols(tab){
+  const m   = maxPri();
+  const vis = tab.cols.filter(c => (c.pri ?? 1) <= m);
+  // Widths are authored to sum to 100 across ALL columns. Once some are dropped the
+  // remainder must be renormalised, or the browser rescales them itself and the four
+  // tables stop agreeing with one another.
+  const sum = vis.reduce((a, c) => a + c.w, 0);
+  return vis.map(c => ({ ...c, w: c.w * 100 / sum }));
+}
+function hiddenCols(tab){
+  const m = maxPri();
+  return tab.cols.filter(c => (c.pri ?? 1) > m);
+}
+
 function tableHtml(tab, rows, pageRows){
   const s = ST[tab.id];
   const maxPct = rows.length ? Math.max(...rows.map(r => r.pct ?? 0)) : 0;
 
+  // Only the columns that survive at this window width — see visibleCols().
+  const cols = visibleCols(tab);
+
   // Fixed column widths, straight from the column defs — this is what keeps the
   // four tables consistent with one another.
-  const group = `<colgroup>${tab.cols.map(c => `<col style="width:${c.w}%">`).join("")}</colgroup>`;
+  const group = `<colgroup>${cols.map(c => `<col style="width:${c.w}%">`).join("")}</colgroup>`;
 
   // Only the count and refund columns are sortable. The rest (rank, SKU, ASIN,
   // reason, %, currency) render as plain, non-interactive headers.
-  const head = tab.cols.map(c => {
+  const head = cols.map(c => {
     const a = c.al ? `al-${c.al}` : "";
     if(!c.sort) return `<th class="${a} nosort">${esc(c.label)}</th>`;
     const on = s.sortKey === c.k;
@@ -869,7 +928,7 @@ function tableHtml(tab, rows, pageRows){
             <div class="none">No records match the current filters.</div>`;
 
   const body = pageRows.map(r =>
-    `<tr class="${r.rank<=3?"hot":""}">${tab.cols.map(c => cell(c, r, maxPct)).join("")}</tr>`
+    `<tr class="${r.rank<=3?"hot":""}">${cols.map(c => cell(c, r, maxPct)).join("")}</tr>`
   ).join("");
   return `<table>${group}<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
@@ -952,8 +1011,6 @@ function filtersHtml(tab){
         ${reasons.map(r=>`<option value="${esc(r)}" ${s.reason===r?"selected":""}>${esc(r)}</option>`).join("")}
       </select>
     </div>
-    <div class="f num"><label>Min refund</label><input data-f="minR" type="number" step="0.01" placeholder="0.00" value="${esc(s.minR)}"></div>
-    <div class="f num"><label>Max refund</label><input data-f="maxR" type="number" step="0.01" placeholder="any" value="${esc(s.maxR)}"></div>
     <div class="f num"><label>Min returns</label><input data-f="minC" type="number" step="1" placeholder="0" value="${esc(s.minC)}"></div>
     <!-- Phone-only sort control. On small screens the rows restack as cards and the
          sortable <th>s are hidden, so without this there would be no way to sort at
@@ -1002,12 +1059,33 @@ function render(){
   const t = TABS.find(x => x.id === ACTIVE);
   const s = ST[ACTIVE];
   const n = filtered(t).length, all = rowsFor(t).length;
+  // Columns dropped for width are stated, never dropped silently — a reader must not
+  // mistake a narrow window for missing data. Export and print still carry them all.
+  const hid = hiddenCols(t);
   $("#scope").innerHTML =
     `<b>${t.plat} — ${t.name}</b> · scoped to <b>${s.ccy === "UNSPECIFIED" ? "currency not recorded" : s.ccy}</b> · ` +
     `showing <b>${int(n)}</b> of <b>${int(all)}</b> records` +
     (n !== all ? ` (filtered)` : ` (all records loaded)`) +
-    ` · Amazon and eBay are never combined, and one currency is shown at a time.`;
+    ` · Amazon and eBay are never combined, and one currency is shown at a time.` +
+    (hid.length
+      ? ` · <span class="hidcols">Narrow window — ${hid.length} column${hid.length>1?"s":""} hidden ` +
+        `(${hid.map(c => esc(c.label)).join(", ")}). Widen the window, or use Export CSV / Print — both include every column.</span>`
+      : "");
 }
+
+/* ---------- responsive: re-render when the column band changes ----------
+   Type and spacing scale continuously in CSS and need no JS. Only the column SET is
+   JS-driven, so we re-render solely when the band actually changes — not on every
+   resize frame. All handlers are delegated on `document`, so re-rendering cannot
+   detach them. */
+let COLBAND = maxPri(), rzT;
+window.addEventListener("resize", () => {
+  clearTimeout(rzT);
+  rzT = setTimeout(() => {
+    const b = maxPri();
+    if(b !== COLBAND){ COLBAND = b; render(); }
+  }, 120);
+});
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
@@ -1026,7 +1104,7 @@ document.addEventListener("click", e => {
   if(pg && !pg.disabled){ ST[ACTIVE].page = Number(pg.dataset.page); render(); return; }
 
   if(e.target.closest("[data-clear]")){
-    Object.assign(ST[ACTIVE], {q:"", reason:"", minR:"", maxR:"", minC:"", page:1});
+    Object.assign(ST[ACTIVE], {q:"", reason:"", minC:"", page:1});
     render(); return;
   }
 });
