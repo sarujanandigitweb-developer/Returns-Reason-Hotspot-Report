@@ -1,0 +1,2 @@
+request_date,order_id,sku,asin,marketplace,currency,reason,fulfilment,status,resolution,return_qty,refunded_amount_gbp,refund_posted_to_finance,refund_posted_date,return_label_cost_gbp,buyer_comments
+2026-05-07,205-7504219-5702761,RWWPSY10GY-UK,B0DZNLF6LK,UK,GBP,UNWANTED_ITEM,FBM,Approved,AutomatedRefund,1,2.10,YES,2026-05-27,2.73,

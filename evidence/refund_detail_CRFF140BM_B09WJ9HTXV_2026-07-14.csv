@@ -1,0 +1,2 @@
+request_date,order_id,sku,asin,marketplace,currency,reason,fulfilment,status,resolution,return_qty,refunded_amount_gbp,refund_posted_to_finance,refund_expected_gbp,return_label_cost_gbp,buyer_comments
+2026-06-29,203-2674201-0156341,CRFF140BM+WSNW170BM+LSFT220BM,B09WJ9HTXV,UK,GBP,DEFECTIVE,FBM,Approved,StandardRefund,1,,NO - no RefundEventList yet,18.89,2.79,

@@ -158,3 +158,98 @@ SELECT a.ccy, a.sku, a.return_count, a.total_refunded,
 FROM sku_agg a
 LEFT JOIN top_reason t USING (ccy, sku)
 ORDER BY a.ccy, a.total_refunded DESC, a.return_count DESC, a.sku;
+
+
+-- ============================================================================
+-- NOT_AS_DESCRIBED — Possible Image/Listing Mismatch Candidates
+-- ============================================================================
+-- Feeds the "Mismatch Candidates" dashboard tab. NOTE: these are NOT part of the
+-- daily refresh (refresh_dashboard.py rewrites only the four queries above, which
+-- populate `const DATA`). The mismatch tab reads `const MISMATCH`, a static
+-- snapshot — re-run these by hand and update that block when needed.
+--
+-- Threshold (both platforms): >= 3 NOT_AS_DESCRIBED returns for the SKU AND that
+-- reason being >= 40% of the SKU's OWN total returns (denominator = the SKU's own
+-- returns, not all SKUs).
+--
+-- DEVIATION (disclosed on the dashboard, pending DWC ratification): Amazon's real
+-- "not as described" signal is AMZ-PG-BAD-DESC. The literal 'NOT_AS_DESCRIBED'
+-- value on Amazon is a near-empty legacy code (33 rows, GBP 0.00 refund) and
+-- produces a misleading GBP 0.00 table. eBay uses the literal 'NOT_AS_DESCRIBED',
+-- which is a real populated value there.
+
+
+-- name: nad_amazon_candidates
+-- Amazon SKUs with a high concentration of AMZ-PG-BAD-DESC returns, + listing context.
+WITH cand AS (
+    SELECT sku, asin, market_place,
+           COUNT(*)                                                              AS total_returns,
+           COUNT(*) FILTER (WHERE reason = 'AMZ-PG-BAD-DESC')                     AS nad_count,
+           ROUND(COUNT(*) FILTER (WHERE reason = 'AMZ-PG-BAD-DESC')::numeric*100.0
+                 / NULLIF(COUNT(*),0), 1)                                         AS pct_nad,
+           ROUND(SUM(COALESCE(refunded_amount,0)) FILTER (WHERE reason='AMZ-PG-BAD-DESC')::numeric, 2) AS nad_refund,
+           MAX(currency) FILTER (WHERE reason='AMZ-PG-BAD-DESC')                  AS ccy
+    FROM public.amazon_returns
+    WHERE request_date >= CURRENT_DATE - INTERVAL '3 months'
+    GROUP BY sku, asin, market_place
+    HAVING COUNT(*) FILTER (WHERE reason='AMZ-PG-BAD-DESC') >= 1  -- all SKUs with any NAD return
+       -- (the dashboard badges rows that also meet the strict >=3 AND >=40% signal)
+),
+ld AS (   -- dedup listing_data to ONE row per ASIN+marketplace (prefer is_child), avoids fan-out
+    SELECT DISTINCT ON (ref_id, market_place)
+           ref_id, market_place, title, price, currency, product_type
+    FROM public.listing_data
+    WHERE which_channel = 1 AND wrong_sku = 0
+    ORDER BY ref_id, market_place, is_child DESC NULLS LAST, price DESC NULLS LAST
+)
+SELECT c.sku, c.asin, c.market_place, c.ccy,
+       c.total_returns, c.nad_count, c.pct_nad, c.nad_refund,
+       l.title, l.price AS list_price, l.currency AS list_currency, l.product_type,
+       'https://www.amazon.co.uk/dp/' || c.asin AS listing_link
+FROM cand c
+LEFT JOIN ld l ON l.ref_id = c.asin AND l.market_place = c.market_place
+ORDER BY c.pct_nad DESC, c.nad_count DESC, c.sku;
+
+
+-- name: nad_ebay_candidates
+-- eBay SKUs with a high concentration of NOT_AS_DESCRIBED returns.
+-- Uses the VALIDATED bridge (order_id + item_id), NOT order_id alone (that fans out).
+-- Returns 0 rows in the current window (max NAD on any one SKU is 2; threshold is 3).
+WITH ret AS (
+    SELECT r.id, r.reason,
+           COALESCE(r.seller_currency,'UNSPECIFIED') AS ccy,
+           ot.sku, ot.item_id
+    FROM public.ebay_returns r
+    LEFT JOIN LATERAL (
+        SELECT o.sku, o.item_id FROM public.order_transaction o
+        WHERE o.order_id = r.order_id AND o.item_id = r.item_id::text LIMIT 1
+    ) ot ON TRUE
+    WHERE r.res_his_order = 0
+      AND r.request_date >= CURRENT_DATE - INTERVAL '3 months'
+),
+cand AS (
+    SELECT sku, item_id, ccy,
+           COUNT(DISTINCT id)                                                 AS total_returns,
+           COUNT(DISTINCT id) FILTER (WHERE reason='NOT_AS_DESCRIBED')         AS nad_count,
+           ROUND(COUNT(DISTINCT id) FILTER (WHERE reason='NOT_AS_DESCRIBED')::numeric*100.0
+                 / NULLIF(COUNT(DISTINCT id),0), 1)                            AS pct_nad
+    FROM ret
+    WHERE sku IS NOT NULL
+    GROUP BY sku, item_id, ccy
+    HAVING COUNT(DISTINCT id) FILTER (WHERE reason='NOT_AS_DESCRIBED') >= 1  -- all SKUs with any NAD return
+       -- (dashboard badges rows that also meet the strict >=3 AND >=40% signal)
+),
+ld AS (   -- eBay listing context: resolve SKU with COALESCE(NULLIF(mapped_sku,''),sku), dedup
+    SELECT DISTINCT ON (resolved_sku)
+           COALESCE(NULLIF(mapped_sku,''), sku) AS resolved_sku, title, price, currency, product_type
+    FROM public.listing_data
+    WHERE which_channel = 2 AND wrong_sku = 0
+    ORDER BY resolved_sku, is_child DESC NULLS LAST, price DESC NULLS LAST
+)
+SELECT c.sku, c.item_id, c.ccy,
+       c.total_returns, c.nad_count, c.pct_nad,
+       l.title, l.price AS list_price, l.currency AS list_currency, l.product_type,
+       'https://www.ebay.co.uk/itm/' || c.item_id AS listing_link
+FROM cand c
+LEFT JOIN ld l ON l.resolved_sku = c.sku
+ORDER BY c.pct_nad DESC, c.nad_count DESC, c.sku;
