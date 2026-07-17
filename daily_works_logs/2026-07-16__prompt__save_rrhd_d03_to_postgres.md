@@ -137,13 +137,16 @@ Rules:
     GROUP BY deliverable_id, activity_date ORDER BY activity_date;
     -- expect: D01 -> 14 rows, D02 -> 12 rows, D03 -> 4 rows
 
-    -- 5c. The critical D03 findings are queryable
+    -- 5c. The D03 findings are queryable
     SELECT activity_id, priority, gap_or_risk
     FROM daily_task.tbl_rrhd_sarujanan
-    WHERE activity_date = DATE '2026-07-16' AND priority = 'critical'
+    WHERE activity_date = DATE '2026-07-16' AND priority IN ('critical','high')
     ORDER BY activity_id;
-    -- expect 2 rows: D03-A01 (eBay title source order_item_info),
-    --                D03-A04 (mismatch wired into refresh, deterministic)
+    -- expect 4 rows, all priority = 'high', and 0 rows at 'critical'.
+    -- Priority bar (set by D01/D02): 'critical' is reserved for wrong numbers shipped,
+    -- wrong attribution shipped, an undisclosed material gap, unstable/destroyed output,
+    -- or a security exposure. D03 is title-completeness + refresh automation: blank is not
+    -- wrong, and A04 mirrors D01-A12 (built the refresh script) which was rated 'high'.
 
 ## STEP 6 — REPORT
 State plainly: table existed or created; rows inserted vs updated (RETURNING split);
@@ -157,10 +160,17 @@ If any STEP 4 validation fails, report the failure and the exact SQL that failed
 
 | activity_id | Type | Priority | Title |
 |---|---|---|---|
-| D03-A01 | investigation | **critical** | eBay blank-title root cause — titles live in `order_item_info`, not `listing_data` |
+| D03-A01 | investigation | high | eBay blank-title root cause — titles live in `order_item_info`, not `listing_data` |
 | D03-A02 | investigation | high | Amazon blank titles recovered by ASIN; discovered dual-backend `order_management_copy` |
 | D03-A03 | validation | high | Dashboard verified, auto-vs-Claude output compared, daily 10:00 cron configured |
-| D03-A04 | implementation | **critical** | Wired Mismatch Candidates into the daily refresh — deterministic `const MISMATCH` regeneration |
+| D03-A04 | implementation | high | Wired Mismatch Candidates into the daily refresh — deterministic `const MISMATCH` regeneration |
+
+> **Priority note.** A01 and A04 were first recorded as `critical` and corrected to `high` on
+> review. Against the D01/D02 bar, `critical` means wrong numbers or wrong attribution shipped,
+> an undisclosed material gap, unstable/destroyed output, or a security exposure. D03-A01 fixed
+> **blank** (not wrong) titles while every decision-driving field stayed correct, and it closes
+> D02 GAP-2 which D02 itself rated HIGH. D03-A04 closes D02 GAP-4 (rated MEDIUM) and mirrors
+> D01-A12 "built the refresh script", which was rated `high`.
 
 ## Duplicate-risk: GREEN
 - Table already held **26 rows (14 D01 + 12 D02), 0 D03** — no conflict.
