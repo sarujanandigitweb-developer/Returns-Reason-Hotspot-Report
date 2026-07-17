@@ -2,9 +2,11 @@
 """
 Returns Reason Hotspot Dashboard — daily data refresh.
 
-Re-runs the four queries in sql/returns_hotspot_queries.sql against PostgreSQL
-and rewrites ONLY the embedded data block inside the dashboard HTML. All HTML,
-CSS and JavaScript are preserved byte-for-byte.
+Re-runs the four DATA queries plus the two mismatch-candidate queries in
+sql/returns_hotspot_queries.sql against PostgreSQL and rewrites ONLY the embedded
+data blocks inside the dashboard HTML: `const DATA` + `const GENERATED_AT` (the four
+main tables) and `const MISMATCH` (the Mismatch Candidates tab). All HTML, CSS and
+JavaScript are preserved byte-for-byte.
 
 Run manually:
     python3 scripts/refresh_dashboard.py
@@ -137,6 +139,17 @@ MIN_ROWS = {
     "ebay_skus":      250,
 }
 
+# The two mismatch queries feed `const MISMATCH` (the "Mismatch Candidates" tab).
+# They are executed separately from the four DATA queries above and shaped into the
+# dashboard's 13-field row. amazonSignal is a fixed disclosure label carried forward
+# from the existing block. Titles are carried forward per-SKU because the refresh DB
+# does not expose order_item_info (see build_mismatch_rows / read_const_object).
+NAD_QUERIES = (
+    ("amazon", "nad_amazon_candidates"),
+    ("ebay",   "nad_ebay_candidates"),
+)
+AMAZON_SIGNAL_DEFAULT = "AMZ-PG-BAD-DESC"
+
 
 # --------------------------------------------------------------------------
 # Logging
@@ -256,6 +269,84 @@ def replace_data_block(html: str, data_js: str, generated: str) -> str:
     return html
 
 
+def read_const_object(html: str, name: str):
+    """Parse an embedded `const <name> = {...};` block as JSON (brace-balanced).
+    Returns the object, or None if the block is absent."""
+    marker = f"const {name} = "
+    if marker not in html:
+        return None
+    start = html.index(marker) + len(marker)
+    depth = 0
+    for i in range(start, len(html)):
+        c = html[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(html[start:i + 1])
+    raise ValueError(f"`const {name}` is malformed — unbalanced braces.")
+
+
+def replace_const_object(html: str, name: str, obj) -> str:
+    """Swap ONLY `const <name> = {...};` (brace-balanced) with a fresh JSON literal.
+    Every other byte of the file is preserved. Mirrors replace_data_block, minus the
+    GENERATED_AT handling, so it is safe to run for `const MISMATCH`."""
+    marker = f"const {name} = "
+    start = html.index(marker)
+    brace = html.index("{", start)
+    depth = 0
+    end = None
+    for i in range(brace, len(html)):
+        c = html[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                end = html.index(";", i) + 1
+                break
+    if end is None:
+        raise ValueError(f"The `const {name}` block is malformed — unbalanced braces.")
+    literal = json.dumps(obj, ensure_ascii=False)   # same ", " style as the existing block
+    return html[:start] + f"const {name} = {literal};" + html[end:]
+
+
+def build_mismatch_rows(cur, query_sql: str, kind: str, preserved: dict) -> list:
+    """Run a nad_* query and shape each row into the dashboard's 13-field MISMATCH row:
+        [sku, id, marketplace, title, price, priceCcy, totalReturns,
+         nadCount, pctNad, refund, refundCcy, link, badge]
+    `id` is the ASIN (amazon) or item_id (ebay). badge = strict signal (>=3 AND >=40%).
+    Title precedence: fresh query title -> preserved title for this SKU -> "". The
+    carry-forward exists because the refresh DB has no order_item_info to re-source from."""
+    cur.execute(query_sql)
+    ix = {d.name: i for i, d in enumerate(cur.description)}
+    def g(row, col):
+        return row[ix[col]] if col in ix else None
+    out = []
+    for row in cur.fetchall():
+        sku = g(row, "sku")
+        second = g(row, "asin") if kind == "amazon" else g(row, "item_id")
+        qt = g(row, "title")
+        # Validated carried-forward title wins (by SKU, then by stable id = ASIN/item_id),
+        # so a known SKU's title stays byte-stable across refreshes; only a genuinely new
+        # SKU falls back to the fresh query title, else blank.
+        title = (preserved.get(sku) or preserved.get(second)
+                 or (qt.strip() if isinstance(qt, str) and qt.strip() else ""))
+        nad = int(g(row, "nad_count") or 0)
+        pct = float(g(row, "pct_nad") or 0)
+        badge = 1 if (nad >= 3 and pct >= 40) else 0
+        mkt = (g(row, "market_place") or "") if kind == "amazon" else ""
+        out.append([
+            sku, second, mkt, title,
+            jsonable(g(row, "list_price")), g(row, "list_currency"),
+            int(g(row, "total_returns") or 0), nad, pct,
+            jsonable(g(row, "nad_refund")), g(row, "ccy"),
+            g(row, "listing_link"), badge,
+        ])
+    return out
+
+
 def structure_fingerprint(html: str) -> dict:
     """Cheap structural census, used to prove nothing but the data moved."""
     style = html.find("</style>")
@@ -325,6 +416,33 @@ def main() -> int:
                 row_counts[name] = len(rows)
                 log.info("  %-16s %6d rows  (%.2fs)", name, len(rows), dt)
 
+            # ---- mismatch candidates -> const MISMATCH ----------------------
+            # Titles are carried forward from the existing block (the refresh DB has
+            # no order_item_info to re-source from); only fresh titles override them.
+            old_mm = read_const_object(original_html, "MISMATCH") or {}
+            def _preserved(rows):
+                # key each carried-forward title by SKU (r[0]) AND its stable id
+                # (r[1] = asin/item_id); SKU wins on lookup, id is the fallback.
+                m = {}
+                for r in rows:
+                    if r[3]:
+                        m.setdefault(r[1], r[3])
+                        m[r[0]] = r[3]
+                return m
+            preserved = {
+                "amazon": _preserved(old_mm.get("amazon", [])),
+                "ebay":   _preserved(old_mm.get("ebay", [])),
+            }
+            mismatch = {"amazon": [], "ebay": []}
+            for key, qname in NAD_QUERIES:
+                qt0 = time.perf_counter()
+                mm_rows = build_mismatch_rows(cur, queries[qname], key, preserved[key])
+                dt = time.perf_counter() - qt0
+                mismatch[key] = mm_rows
+                row_counts[qname] = len(mm_rows)
+                log.info("  %-20s %6d rows  (%.2fs)", qname, len(mm_rows), dt)
+            mismatch["amazonSignal"] = old_mm.get("amazonSignal", AMAZON_SIGNAL_DEFAULT)
+
         conn.rollback()   # read-only; close the snapshot cleanly
         total_rows = sum(row_counts.values())
 
@@ -332,6 +450,17 @@ def main() -> int:
         generated = started.strftime("%Y-%m-%d")
         data_js = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
         new_html = replace_data_block(original_html, data_js, generated)
+
+        # Swap `const MISMATCH` too — but never overwrite a good block with an empty
+        # one. If a platform came back empty the previous snapshot is kept intact.
+        if mismatch["amazon"] and mismatch["ebay"]:
+            new_html = replace_const_object(new_html, "MISMATCH", mismatch)
+            mismatch_updated = True
+        else:
+            log.warning("Mismatch query empty for a platform (amazon=%d, ebay=%d) — "
+                        "keeping previous const MISMATCH.",
+                        len(mismatch["amazon"]), len(mismatch["ebay"]))
+            mismatch_updated = False
 
         # ---- prove only the data changed --------------------------------
         after = structure_fingerprint(new_html)
@@ -361,7 +490,9 @@ def main() -> int:
         print(f"Generated:      {generated} {finished.strftime('%H:%M:%S')}")
         print(f"Rows fetched:   {total_rows}")
         for n, c in row_counts.items():
-            print(f"  {n:<16} {c}")
+            print(f"  {n:<22} {c}")
+        print(f"Mismatch block: {'updated' if mismatch_updated else 'preserved'} "
+              f"(amazon {len(mismatch['amazon'])}, ebay {len(mismatch['ebay'])})")
         print(f"Execution time: {elapsed:.2f}s")
         print(f"Output:         {html_path}")
         print("----------------------------------\n")

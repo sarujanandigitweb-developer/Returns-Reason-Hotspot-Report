@@ -163,10 +163,11 @@ ORDER BY a.ccy, a.total_refunded DESC, a.return_count DESC, a.sku;
 -- ============================================================================
 -- NOT_AS_DESCRIBED — Possible Image/Listing Mismatch Candidates
 -- ============================================================================
--- Feeds the "Mismatch Candidates" dashboard tab. NOTE: these are NOT part of the
--- daily refresh (refresh_dashboard.py rewrites only the four queries above, which
--- populate `const DATA`). The mismatch tab reads `const MISMATCH`, a static
--- snapshot — re-run these by hand and update that block when needed.
+-- Feeds the "Mismatch Candidates" dashboard tab. These ARE part of the daily refresh:
+-- refresh_dashboard.py executes both queries and rewrites `const MISMATCH` (alongside
+-- `const DATA` for the four main tables). Titles are carried forward per-SKU from the
+-- previous block because the refresh DB does not expose order_item_info; every other
+-- field (counts, %NAD, refund, badge, link) is regenerated from these queries.
 --
 -- Threshold (both platforms): >= 3 NOT_AS_DESCRIBED returns for the SKU AND that
 -- reason being >= 40% of the SKU's OWN total returns (denominator = the SKU's own
@@ -200,7 +201,9 @@ ld AS (   -- dedup listing_data to ONE row per ASIN+marketplace (prefer is_child
            ref_id, market_place, title, price, currency, product_type
     FROM public.listing_data
     WHERE which_channel = 1 AND wrong_sku = 0
-    ORDER BY ref_id, market_place, is_child DESC NULLS LAST, price DESC NULLS LAST
+    -- tie-break on every selected column so DISTINCT ON is deterministic across runs
+    ORDER BY ref_id, market_place, is_child DESC NULLS LAST, price DESC NULLS LAST,
+             title NULLS LAST, currency NULLS LAST, product_type NULLS LAST
 )
 SELECT c.sku, c.asin, c.market_place, c.ccy,
        c.total_returns, c.nad_count, c.pct_nad, c.nad_refund,
@@ -218,11 +221,16 @@ ORDER BY c.pct_nad DESC, c.nad_count DESC, c.sku;
 WITH ret AS (
     SELECT r.id, r.reason,
            COALESCE(r.seller_currency,'UNSPECIFIED') AS ccy,
+           COALESCE(r.seller_refund_amount, 0)       AS amt,   -- one row per return; summed NAD-only below
            ot.sku, ot.item_id
     FROM public.ebay_returns r
     LEFT JOIN LATERAL (
+        -- ORDER BY makes the pick deterministic: a variation item_id maps to several
+        -- SKUs, and without it LIMIT 1 chose an arbitrary one, so the same item could
+        -- appear under a different SKU (and reshuffle) every refresh.
         SELECT o.sku, o.item_id FROM public.order_transaction o
-        WHERE o.order_id = r.order_id AND o.item_id = r.item_id::text LIMIT 1
+        WHERE o.order_id = r.order_id AND o.item_id = r.item_id::text
+        ORDER BY o.sku LIMIT 1
     ) ot ON TRUE
     WHERE r.res_his_order = 0
       AND r.request_date >= CURRENT_DATE - INTERVAL '3 months'
@@ -232,7 +240,8 @@ cand AS (
            COUNT(DISTINCT id)                                                 AS total_returns,
            COUNT(DISTINCT id) FILTER (WHERE reason='NOT_AS_DESCRIBED')         AS nad_count,
            ROUND(COUNT(DISTINCT id) FILTER (WHERE reason='NOT_AS_DESCRIBED')::numeric*100.0
-                 / NULLIF(COUNT(DISTINCT id),0), 1)                            AS pct_nad
+                 / NULLIF(COUNT(DISTINCT id),0), 1)                            AS pct_nad,
+           ROUND(SUM(amt) FILTER (WHERE reason='NOT_AS_DESCRIBED')::numeric, 2) AS nad_refund
     FROM ret
     WHERE sku IS NOT NULL
     GROUP BY sku, item_id, ccy
@@ -244,10 +253,12 @@ ld AS (   -- eBay listing context: resolve SKU with COALESCE(NULLIF(mapped_sku,'
            COALESCE(NULLIF(mapped_sku,''), sku) AS resolved_sku, title, price, currency, product_type
     FROM public.listing_data
     WHERE which_channel = 2 AND wrong_sku = 0
-    ORDER BY resolved_sku, is_child DESC NULLS LAST, price DESC NULLS LAST
+    -- tie-break on every selected column so DISTINCT ON is deterministic across runs
+    ORDER BY resolved_sku, is_child DESC NULLS LAST, price DESC NULLS LAST,
+             title NULLS LAST, currency NULLS LAST, product_type NULLS LAST
 )
 SELECT c.sku, c.item_id, c.ccy,
-       c.total_returns, c.nad_count, c.pct_nad,
+       c.total_returns, c.nad_count, c.pct_nad, c.nad_refund,
        l.title, l.price AS list_price, l.currency AS list_currency, l.product_type,
        'https://www.ebay.co.uk/itm/' || c.item_id AS listing_link
 FROM cand c
