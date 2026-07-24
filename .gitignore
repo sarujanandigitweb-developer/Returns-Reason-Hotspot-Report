@@ -6,6 +6,10 @@ logs/
 backups/
 *.html.tmp
 
+# Node (hub push script dependency)
+node_modules/
+package-lock.json
+
 # Python
 __pycache__/
 *.py[cod]
