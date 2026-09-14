@@ -60,22 +60,30 @@ for marker in 'const DATA =' 'const MISMATCH =' 'const GENERATED_AT ='; do
   fi
 done
 
-# --- build the connection string from .env (URL-encoded, never logged) --------
+# --- build the hub connection string (URL-encoded, never logged) --------------
+# The hub table varman_aios.hub_pages lives on the hub DB, which is a DIFFERENT
+# database from the dashboard data source (PG* -> LEDSone since 2026-09-14). So the
+# publish uses its own HUB_PG* vars, read straight from .env; it never reuses the
+# PG* refresh connection. Missing HUB_PG* -> publish is skipped (dashboard already
+# refreshed locally), it never falls back to the LEDSone connection.
 if [ ! -r "$PROJECT/.env" ]; then
   log "stage 2 publish: SKIPPED — .env not readable"; exit 1
 fi
 HUB_DB_URL="$(/usr/bin/python3 - "$PROJECT/.env" <<'PY'
-import os, sys, urllib.parse
-from dotenv import load_dotenv
-load_dotenv(sys.argv[1])
-q = lambda v: urllib.parse.quote(v, safe="")
+import sys, urllib.parse
+from dotenv import dotenv_values
+v = dotenv_values(sys.argv[1])
+need = ["HUB_PGHOST", "HUB_PGPORT", "HUB_PGDATABASE", "HUB_PGUSER", "HUB_PGPASSWORD"]
+if any(not v.get(k) for k in need):
+    sys.exit(0)   # missing hub creds -> empty output -> publish skipped, never PG* fallback
+q = lambda s: urllib.parse.quote(s, safe="")
 print("postgresql://%s:%s@%s:%s/%s" % (
-    q(os.environ["PGUSER"]), q(os.environ["PGPASSWORD"]),
-    os.environ["PGHOST"], os.environ["PGPORT"], os.environ["PGDATABASE"]))
+    q(v["HUB_PGUSER"]), q(v["HUB_PGPASSWORD"]),
+    v["HUB_PGHOST"], v["HUB_PGPORT"], v["HUB_PGDATABASE"]))
 PY
 )"
 if [ -z "${HUB_DB_URL:-}" ]; then
-  log "stage 2 publish: SKIPPED — could not build HUB_DB_URL from .env"; exit 1
+  log "stage 2 publish: SKIPPED — HUB_PG* hub-database vars missing/empty in .env"; exit 1
 fi
 export HUB_DB_URL
 
