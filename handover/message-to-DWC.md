@@ -1,5 +1,12 @@
 # Message to DWC — paste-ready
 
+> **HISTORICAL (2026-07-14).** This is the original pre-build message that raised the eBay
+> join-fan-out decision (DR-001) before the first version was built. It is kept as a record of
+> that conversation. The decision was taken (join on `order_id + item_id`, even split, explicit
+> Unattributed) and is now standing project logic. For the current state of the project, start
+> from the top-level [README.md](../README.md).
+
+
 > Hi — before I build the Returns Hotspot report I ran the four queries against live data to sanity-check them, and I think Step 4 (eBay Top 15 SKUs) has a bug I'd rather raise now than ship.
 >
 > `order_transaction` is one row per **line item**, but `ebay_returns` is one row per **return**, and Step 4 joins on `order_id` only. So any returned order that had more than one item in the basket gets duplicated once per SKU, and `SUM(seller_refund_amount)` counts the same refund multiple times. In the last 3 months that's 42 orders, worst case one order with 10 line items.

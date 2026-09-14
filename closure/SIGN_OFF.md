@@ -1,7 +1,18 @@
 # Closure — definition of done
 
 **Deliverable:** [`Dashboard/index.html`](../Dashboard/index.html) — one self-contained file.
-**Refresh:** [`scripts/refresh_dashboard.py`](../scripts/refresh_dashboard.py), daily at 09:00.
+**Refresh:** [`scripts/refresh_and_publish.sh`](../scripts/refresh_and_publish.sh) daily at **10:00**
+(refresh from LEDSone, then publish to the Varman AIOS Hub).
+
+> **Current state (2026-09-14) — evolved well beyond this D01 sign-off:**
+> - **Data source migrated to LEDSone** (`ledsone` @ 169.58.91.229) — see [ledsone-migration.md](../validation/ledsone-migration.md).
+> - **Fifth tab added: Mismatch Candidates** (Amazon + eBay "not as described", badged ≥3 & ≥40%).
+> - **Six** queries now (4 main + `nad_amazon_candidates` + `nad_ebay_candidates`); the refresh
+>   rewrites `const DATA` **+ `const MISMATCH`** + `const GENERATED_AT`.
+> - **Auto-publish**: the daily job also upserts the dashboard to `varman_aios.hub_pages`.
+> - The `AMZ-PG-BAD-DESC` question below was **decided** — it is the Amazon NAD signal (disclosed on the page).
+> - SKU tables now show **all** rows with pagination, not a top-15.
+> The D01 checklist and deviations below remain accurate as the original acceptance record.
 
 ---
 
@@ -65,11 +76,13 @@ Paste-ready explanation: [`handover/message-to-DWC.md`](../handover/message-to-D
 
 ## Security
 
-- Credentials are in `.env` (gitignored, `chmod 600`). No fallbacks in source.
-- `.env.example` is the committed template and carries no real password.
-- **The database password was transmitted in plaintext during this work and previously lived in
-  the script's source. Treat `temp_user` as exposed and rotate it** if this repo has ever been
-  pushed or shared.
+- Credentials are in `.env` (gitignored, `chmod 600`). No fallbacks in source. `.env` now holds
+  **two** connections: `PG*` (LEDSone data source) and `HUB_PG*` (hub-publish target).
+- `.env.example` is the committed template and carries no real passwords.
+- **Rotate `temp_user` (now the hub credential).** The old `temp_user` password was exposed in
+  plaintext and still lives in git history (commit `90d3f1a`). Since the hub publish reuses it as
+  `HUB_PGPASSWORD`, this is now an **active** exposed credential — rotate it on the DB and update
+  `.env`. The LEDSone `tech_user` password was also pasted into a chat during handover — rotate it too.
 
 ## Verification trail
 

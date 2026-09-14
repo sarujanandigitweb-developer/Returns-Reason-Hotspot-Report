@@ -1,8 +1,17 @@
 # DR-001 — eBay SKU join fans out and overstates refunds
 
-**Status:** OPEN — needs a decision before the report is built
+**Status:** RESOLVED & IMPLEMENTED (option C + A) — this is now a load-bearing rule of the project.
 **Found:** 2026-07-14, during pre-build validation
-**Affects:** Task Brief Step 4 (eBay — Top 15 SKUs by Refund Value)
+**Affects:** eBay SKU attribution (`ebay_skus`, `nad_ebay_candidates`)
+
+> **Current implementation (LEDSone, 2026-09-14):** the same rule holds, but the single old
+> `public.order_transaction` table is now a **2-hop bridge** —
+> `ebay_returns.order_id → orders.order_id → orders.id → order_item_info.order_id (+ item_id) → item_sku`.
+> The join is still on **order_id + item_id** (never `order_id` alone), variation listings still
+> split evenly, and unmatched returns still show as *Unattributed*. The measured numbers below are
+> from the original 2026-07-14 old-DB analysis and are kept as the historical rationale; on LEDSone
+> the bridge resolves 410/413 (99.3%) of eBay returns to a SKU. See
+> [validation/ledsone-migration.md](../validation/ledsone-migration.md).
 
 ---
 

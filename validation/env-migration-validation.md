@@ -1,6 +1,13 @@
 # Validation — credential migration to `.env`
 
-Configuration-only change. Run 2026-07-14 against the live database
+> **HISTORICAL & SUPERSEDED (2026-07-14).** This documents the original move of the *old*
+> `temp_user` / `order_management_copy` credentials into `.env`. The dashboard data source has
+> since migrated to LEDSone — see [ledsone-migration.md](ledsone-migration.md). These
+> `temp_user` credentials now serve **only** as the hub-publish credential (`HUB_PG*`); the
+> `temp_user` password remains exposed in git history and **should be rotated** (see README
+> "Open items").
+
+Configuration-only change. Run 2026-07-14 against the old database
 (`149.28.134.54:5435/order_management_copy`).
 
 **Result: PASS.** The regenerated dashboard is **byte-for-byte identical** to the validated
@@ -96,7 +103,7 @@ Zero leftover `.tmp` files — the atomic write completed cleanly.
 
 ## 8. No credentials remain
 
-- `grep -rn '12we34rt'` across the repo, excluding `.env` and `backups/`: **no matches**
+- `grep -rn '<old-password>'` across the repo, excluding `.env` and `backups/`: **no matches**
 - `git status --untracked-files=all`: `.env` **not** among the files git would commit
 - `.env` is `chmod 600`, gitignored, and present only on this machine
 

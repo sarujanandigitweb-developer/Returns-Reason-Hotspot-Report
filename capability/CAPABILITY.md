@@ -2,6 +2,13 @@
 
 Written so the next person doesn't spend a day rediscovering a dead end.
 
+> **Current state (2026-09-14):** data source is **LEDSone** (see
+> [data-maps/TABLE_MAP.md](../data-maps/TABLE_MAP.md)); the dashboard now has a **fifth tab,
+> Mismatch Candidates**, which answers the "which listings are returned as *not as described*"
+> question directly (Amazon `AMZ-PG-BAD-DESC`, eBay `NOT_AS_DESCRIBED`, badged at ≥3 & ≥40%).
+> The row counts and £ figures below are illustrative old-DB numbers; the *shape* of what can and
+> cannot be answered is unchanged.
+
 ---
 
 ## It CAN answer

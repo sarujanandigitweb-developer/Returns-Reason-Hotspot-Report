@@ -2,120 +2,157 @@
 
 **Deliverable:** [`Dashboard/index.html`](Dashboard/index.html) — one self-contained file (CSS + JS + data all embedded, no external dependencies). Open it in any browser.
 
-Answers *"Which products are being returned the most, why, and how much is it costing us?"* for Amazon and eBay, last 3 months, kept strictly separate.
+Answers *"Which products are being returned the most, why, and how much is it costing us?"* for Amazon and eBay, last 3 months, kept strictly separate — plus a **Mismatch Candidates** tab that flags listings whose returns come back specifically as "not as described" (a listing/photo problem, not a faulty product).
+
+> **Data source:** as of **2026-09-14** the dashboard reads the **LEDSone PostgreSQL** database
+> (`ledsone` @ `169.58.91.229:5432`, TLS required). It previously used `order_management_copy`
+> @ `149.28.134.54`. See [validation/ledsone-migration.md](validation/ledsone-migration.md) for
+> the full source-mapping and cut-over evidence.
 
 ---
 
-## Daily refresh
+## The dashboard at a glance
 
-The dashboard is a snapshot. [`scripts/refresh_dashboard.py`](scripts/refresh_dashboard.py) re-runs the four queries in [`sql/returns_hotspot_queries.sql`](sql/returns_hotspot_queries.sql) against PostgreSQL and rewrites **only** the embedded data block — all HTML, CSS and JavaScript are preserved byte-for-byte.
+Five tabs, all in the one HTML file:
 
-### Setup (once)
+| Tab | Shows |
+|---|---|
+| Amazon — Return Reasons | reasons ranked by refund, per currency |
+| Amazon — SKU Refund Analysis | every returning SKU (search / sort / paginate), top reason, marketplace |
+| eBay — Return Reasons | same, eBay |
+| eBay — SKU Refund Analysis | same, eBay (SKU resolved via the order bridge) |
+| **Mismatch Candidates** | Amazon + eBay SKUs with a high concentration of "not as described" returns; 🔴 badge = the strict ≥3 returns **and** ≥40%-of-own-returns signal |
 
-**1. Install the dependencies**
+SKU tables show **all** rows with pagination (not a top-15). Currencies are never summed; Amazon and eBay are never combined.
+
+---
+
+## How the data gets in
+
+Two embedded constants in the HTML hold all the data; the refresh rewrites them and nothing else:
+
+- `const DATA` — the four main tables (Amazon/eBay × Reasons/SKUs)
+- `const MISMATCH` — the Mismatch Candidates tab
+- `const GENERATED_AT` — the snapshot date shown in the header
+
+[`scripts/refresh_dashboard.py`](scripts/refresh_dashboard.py) runs the **six** queries in
+[`sql/returns_hotspot_queries.sql`](sql/returns_hotspot_queries.sql) against LEDSone and swaps
+**only** those three constants — all HTML, CSS and JavaScript are preserved byte-for-byte, checked
+by a structural fingerprint.
+
+The six queries: `amazon_reasons`, `amazon_skus`, `ebay_reasons`, `ebay_skus`,
+`nad_amazon_candidates`, `nad_ebay_candidates`.
+
+---
+
+## Setup (once)
+
+**1. Install dependencies** (Python for the refresh, Node `pg` for the hub publish)
 
 ```bash
-pip install python-dotenv psycopg2-binary
+pip install python-dotenv psycopg2-binary          # or: sudo apt install python3-dotenv python3-psycopg2 (PEP 668)
+cd scripts && npm install pg && cd ..               # for the hub publish (scripts/refresh_and_publish.sh)
 ```
 
-On Debian/Ubuntu, `pip` may refuse to install system-wide (PEP 668). Either use the packaged versions:
-
-```bash
-sudo apt install python3-dotenv python3-psycopg2
-```
-
-…or install into a virtualenv, and point the cron job at that interpreter.
-
-**2. Create your `.env` from the template**
+**2. Create your `.env`** from the template
 
 ```bash
 cp .env.example .env
 ```
 
-**3. Fill in the credentials**
-
-Edit `.env` and set the real `PGPASSWORD`:
+**3. Fill in the credentials** — `.env` holds **two** connections:
 
 ```ini
+# Dashboard DATA source — LEDSone (the queries read this)
 PGHOST=169.58.91.229
 PGPORT=5432
 PGDATABASE=ledsone
 PGUSER=tech_user
 PGPASSWORD=<the real password>
 PGSSLMODE=require
+
+# Hub PUBLISH target — the DB that holds varman_aios.hub_pages (a DIFFERENT database)
+HUB_PGHOST=<hub db host>
+HUB_PGPORT=5432
+HUB_PGDATABASE=<hub db name>
+HUB_PGUSER=<hub db user>
+HUB_PGPASSWORD=<hub db password>
 ```
 
-Then lock it down: `chmod 600 .env`
+Then lock it down: `chmod 600 .env`. `.env` is gitignored and **must never be committed**;
+`.env.example` is the committed template and must never contain a real password. There are no
+fallback credentials — a missing variable makes the refresh print the missing name and exit 1
+without touching the dashboard (the hub publish likewise skips rather than falling back).
 
-`.env` is gitignored and **must never be committed**. `.env.example` is the committed template and must never contain a real password. There are no fallback credentials in the script — if any variable is missing it prints the missing name, refuses to connect, and exits 1 without touching the dashboard.
+---
 
-### Run it manually
+## Run it
+
+**Manually (refresh only):**
 
 ```bash
 python3 scripts/refresh_dashboard.py
 ```
 
-### Schedule it daily at 09:00
+**The full daily job (refresh + publish to the hub):**
 
-```cron
-0 9 * * * /usr/bin/python3 /home/led-247/Returns-Reason-Hotspot-Report/scripts/refresh_dashboard.py >> /home/led-247/Returns-Reason-Hotspot-Report/logs/cron.out 2>&1
+```bash
+scripts/refresh_and_publish.sh
 ```
 
-Install with `crontab -e`. The script has no loop — cron owns the schedule. It resolves its own paths, so it runs correctly from any working directory (cron runs jobs from `$HOME`).
+### Scheduled — daily at 10:00 (installed)
 
-### What it guarantees
+```cron
+0 10 * * * /home/led-247/Returns-Reason-Hotspot-Report/scripts/refresh_and_publish.sh >> /home/led-247/Returns-Reason-Hotspot-Report/logs/cron.out 2>&1
+```
 
-- The dashboard is overwritten **only** after all four queries succeed and pass row-count floors. A query returning zero — or suspiciously few — rows is treated as a broken filter and refused, not written.
-- A structural fingerprint is compared before/after; if anything other than the data block moved, the write is aborted.
-- The write is atomic (`os.replace`), so a crash can't leave a truncated file.
-- Every run keeps a timestamped backup in `backups/` and appends to `logs/dashboard_refresh.log` (start, finish, duration, rows, success/failure, full error).
-- Any failure — bad credentials, unreachable host, missing `.env` — leaves the previous dashboard **completely intact** and exits non-zero.
+`refresh_and_publish.sh` runs two stages: **(1)** `refresh_dashboard.py` (from LEDSone), then
+**(2)** `scripts/push_to_hub.js`, which upserts the refreshed HTML into `varman_aios.hub_pages`
+(member `sarujanan`, slug `returns-reason-hotspot-report`) so it appears on the Varman AIOS Hub.
+Stage 2 runs **only if stage 1 succeeded**, and uses the separate `HUB_PG*` connection — see
+[workflows/REFRESH_WORKFLOW.md](workflows/REFRESH_WORKFLOW.md).
 
-## Status — built, verified, ready to send
+### What the refresh guarantees
 
-- [x] All four queries executed against live PostgreSQL — real numbers, no placeholders
-- [x] One HTML file, opens cleanly, renders verified in a browser
-- [x] Header: title, generation date, snapshot disclaimer
-- [x] Amazon and eBay separate — no merged totals anywhere
-- [x] All tables sorted by refund value descending (verified programmatically)
-- [x] Top 3 rows shaded; bold headers; alternating row shading
-- [x] Every total reconciles to the database — see [validation/reconciliation.md](validation/reconciliation.md)
-- [x] Stretch goal done: each top SKU shows its most common return reason
+- The dashboard is overwritten **only** after all six queries succeed and pass row-count floors. A query returning zero — or suspiciously few — rows is refused, not written.
+- A structural fingerprint is compared before/after; if anything other than the three data constants moved, the write is aborted.
+- The write is atomic (`os.replace`); a crash can't leave a truncated file.
+- Every run keeps a timestamped backup in `backups/` and appends to `logs/dashboard_refresh.log`; the hub stage logs to `logs/hub_publish.log`.
+- Any failure leaves the previous dashboard **completely intact** and exits non-zero (fail-closed).
+- The refresh is **deterministic** — two runs against the same DB state produce byte-identical data blocks.
 
-Extras beyond the brief: KPI cards per platform, currency selector, Refresh / Print / Export CSV.
+---
 
-## Read this before sending it to DWC
+## Business rules baked into the SQL (do not change lightly)
 
-The report deviates from the brief's SQL in three places. **Each one fixes a defect** — they are documented in a panel at the top of the report itself, so DWC sees them without being told.
+- **`res_his_order = 0` on `ebay_returns` is mandatory** — without it the window inflates ~10× from resolution-history rows.
+- **eBay has no `sku`** — it is resolved via the order bridge on `order_id + item_id` (never `order_id` alone, which fans out; see [DR-001](duplicate-risk-reports/DR-001-ebay-sku-join-fanout.md)). Variation listings split the refund/units evenly; unmatched returns show as an explicit *Unattributed* row.
+- **Currency is split, never summed**; **Amazon and eBay are never combined.**
+- **Amazon `CR-` reason prefix is stripped** so one reason doesn't split across two rows.
+- **Mismatch signal:** Amazon uses `AMZ-PG-BAD-DESC`, eBay uses `NOT_AS_DESCRIBED`; a SKU is badged when it has **≥3** such returns **and** they are **≥40%** of that SKU's own returns.
+- **Deterministic ordering** — every query ends with a tie-break so ranks don't reshuffle between runs.
 
-1. **Currency is split, never summed.** Both platforms are multi-currency in this window. The brief's Step 1/2 sums `refunded_amount` with no currency grouping — adding GBP + USD + EUR + CAD and labelling it `£`. That is the exact error the brief's own scope table forbids; it just doesn't notice Amazon is itself multi-currency.
-2. **eBay SKU joins on `order_id + item_id`.** The brief's Step 4 joins on `order_id` alone, which fans out across basket line items and overstates eBay SKU refunds by **+12.7%** while blaming SKUs that merely shared a basket with a faulty item. See [DR-001](duplicate-risk-reports/DR-001-ebay-sku-join-fanout.md).
-3. **Amazon `CR-` reason prefix stripped.** The same reason appears both with and without it; grouping raw splits one reason across two rows.
-
-**One open question for DWC:** `AMZ-PG-BAD-DESC` is the 3rd biggest GBP refund reason (£2,340.74) and the biggest USD one. If that is the "not as described" signal, it points straight at the Listing team — but merging it into `NOT_AS_DESCRIBED` is a call about Amazon's taxonomy that should be his, not mine. Flagged, not assumed.
-
-## Headline numbers (GBP, last 3 months)
-
-| | Amazon | eBay |
-|---|---|---|
-| Returns | 1,205 | 340 |
-| Refunded | £21,412.33 | £7,742.62 |
-| Top reason | NOT_COMPATIBLE (£5,665.27) | WRONG_SIZE (£1,885.89) |
-
-Never added together — different currencies and fee structures.
+---
 
 ## Folders
 
 | Folder | Holds |
 |---|---|
-| `sql/` | [The four queries as actually run](sql/returns_hotspot_queries.sql), with the deviations commented inline |
-| `validation/` | [Reconciliation proof](validation/reconciliation.md) — embedded figures vs database |
-| `duplicate-risk-reports/` | [DR-001](duplicate-risk-reports/DR-001-ebay-sku-join-fanout.md) — the eBay join fan-out |
-| `documentation/` | The original task brief |
-| `handover/` | [Paste-ready message to DWC](handover/message-to-DWC.md) |
-| `evidence/`, `data-maps/`, `query-packs/`, `workflows/`, `capability/`, `prompts/`, `closure/` | Scaffolding for follow-on work |
+| `sql/` | [The six queries as run](sql/returns_hotspot_queries.sql), mapped to LEDSone, deviations commented inline |
+| `scripts/` | `refresh_dashboard.py` (refresh), `refresh_and_publish.sh` (daily job), `push_to_hub.js` (hub publish) |
+| `validation/` | [LEDSone migration evidence](validation/ledsone-migration.md) (current); [reconciliation](validation/reconciliation.md) + [env migration](validation/env-migration-validation.md) (historical D01) |
+| `duplicate-risk-reports/` | [DR-001](duplicate-risk-reports/DR-001-ebay-sku-join-fanout.md) — the eBay join fan-out rule |
+| `data-maps/` | [TABLE_MAP.md](data-maps/TABLE_MAP.md) — the LEDSone tables, keys and traps |
+| `capability/` | [CAPABILITY.md](capability/CAPABILITY.md) — what the report can and cannot answer |
+| `documentation/`, `handover/` | The original task brief and the original build-time message to DWC (**historical**) |
+| `daily_works_logs/` | Dated D01–D03 work records (**historical**, not maintained) |
+| `skills/` | **Legacy** company table-reference docs describing the *old* `order_management_copy` schema — not the LEDSone schema this project now uses. Use [data-maps/TABLE_MAP.md](data-maps/TABLE_MAP.md) instead |
+| `backups/`, `logs/`, `evidence/`, `query-packs/`, `prompts/`, `closure/` | Runtime artefacts and scaffolding |
 
-## Two rules that will bite anyone extending this
+---
 
-1. **`res_his_order = 0` on `ebay_returns` is not optional.** Without it the 3-month window returns 5,064 rows instead of 489 — a 10× inflation from resolution-history rows.
-2. **Never add Amazon and eBay — or two currencies — into one number.**
+## ⚠️ Open items for the next owner
+
+1. **Rotate the hub-DB / `temp_user` password.** It was exposed in plaintext during earlier work and now serves as the **active hub-publish credential** (`HUB_PGPASSWORD`). It still appears in git history (commit `90d3f1a`) and in `validation/env-migration-validation.md`. Rotate it on the DB, update `HUB_PGPASSWORD` in `.env`, and consider purging it from history.
+2. **Hub location:** the hub table `varman_aios.hub_pages` lives on the old/hub DB, **not** LEDSone. The publish is intentionally pointed there via `HUB_PG*`. If the hub site moves to LEDSone, update those vars.
+3. **Amazon marketplace** is derived (returns carry no marketplace) via `orders.market_place` → `order_management.market_place.name`; ~16% of returns have no order header and show `UNSPECIFIED` — expected, never invented.

@@ -1,5 +1,12 @@
 # Validation — Returns Reason Hotspot Report
 
+> **HISTORICAL (D01, 2026-07-14).** This reconciliation was run against the *old*
+> `order_management_copy` database, when the dashboard had four tabs and SKU tables were
+> capped at 15. It is kept as the original build-time proof. For the **current** data source
+> (LEDSone) and the six-query/Mismatch-tab reconciliation, see
+> [ledsone-migration.md](ledsone-migration.md). The figures below are old-DB numbers and no
+> longer match the live dashboard.
+
 Run 2026-07-14 against live PostgreSQL. Every figure in `index.html` is embedded from
 these results; nothing is hand-typed or estimated.
 
