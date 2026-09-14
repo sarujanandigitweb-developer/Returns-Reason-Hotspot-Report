@@ -37,11 +37,12 @@ cp .env.example .env
 Edit `.env` and set the real `PGPASSWORD`:
 
 ```ini
-PGHOST=149.28.134.54
-PGPORT=5435
-PGDATABASE=order_management_copy
-PGUSER=temp_user
+PGHOST=169.58.91.229
+PGPORT=5432
+PGDATABASE=ledsone
+PGUSER=tech_user
 PGPASSWORD=<the real password>
+PGSSLMODE=require
 ```
 
 Then lock it down: `chmod 600 .env`

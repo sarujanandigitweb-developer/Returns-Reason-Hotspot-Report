@@ -92,6 +92,9 @@ def load_db_config() -> dict:
         "dbname":   os.environ["PGDATABASE"],
         "user":     os.environ["PGUSER"],
         "password": os.environ["PGPASSWORD"],
+        # LEDSone requires TLS. Default to 'require' so a missing var can never
+        # silently downgrade to an unencrypted connection; override via PGSSLMODE.
+        "sslmode":  os.environ.get("PGSSLMODE", "require"),
     }
 
 
