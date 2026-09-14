@@ -73,7 +73,19 @@ and all output column names/order — unchanged.
 - `.env` is gitignored and untracked; `.env.example` + README carry a placeholder only.
 - No password in source, SQL, README, this file, logs, or Git. TLS required.
 
-## 8. Pending (operator action)
-Live refresh (Phases 5–6) is gated on `tech_user`'s password in `.env` (`PGPASSWORD=`).
-Once set: `python3 scripts/refresh_dashboard.py` (run twice for determinism), then verify
-embedded `DATA`/`MISMATCH`/`GENERATED_AT` and commit the refreshed dashboard.
+## 8. Live cutover — COMPLETED 2026-09-14
+Operator populated `tech_user`'s password in `.env`; the live refresh ran against LEDSone.
+- Connection: `tech_user@169.58.91.229:5432/ledsone`, TLS. Exit 0, 2252 rows, backup + log written.
+- Six queries (embedded == live): amazon_reasons 67, amazon_skus 1561, ebay_reasons 28,
+  ebay_skus 364, nad_amazon_candidates 179, nad_ebay_candidates 53.
+- Embedded blocks: `const DATA`/`const MISMATCH`/`const GENERATED_AT` each once; valid JSON;
+  `node --check` OK; `GENERATED_AT=2026-09-14`.
+- Value cross-check vs independent MCP: Amazon GBP refund 18598.19 == 18598.19; eBay GBP refund
+  6140.69 vs 6140.62 (0.07 = existing per-SKU even-split allocation rounding, not staleness).
+- UI integrity: structural fingerprint `27a1abe327fb0f69` identical before and after (HTML/CSS/JS/
+  tabs/functions/Mismatch UI unchanged).
+- Determinism: two consecutive runs produced byte-identical DATA (`839553b9…`) and MISMATCH
+  (`3800bc31…`) blocks; same-day GENERATED_AT.
+- Security: password absent from all source/SQL/README/logs/evidence and Git (tracked + history);
+  `.env` gitignored + untracked. NOTE: the password was pasted into the chat transcript during
+  handover — rotate it as a precaution.
