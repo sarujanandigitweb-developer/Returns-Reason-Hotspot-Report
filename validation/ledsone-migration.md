@@ -89,3 +89,39 @@ Operator populated `tech_user`'s password in `.env`; the live refresh ran agains
 - Security: password absent from all source/SQL/README/logs/evidence and Git (tracked + history);
   `.env` gitignored + untracked. NOTE: the password was pasted into the chat transcript during
   handover — rotate it as a precaution.
+
+## 9. Post-migration data validation — old vs new (2026-09-14)
+Ran the project's six queries against **both** databases (old-schema SQL vs `order_management_copy`,
+current SQL vs `ledsone`), same window, compared every row key-by-key.
+
+- **Databases are near-mirrors; LEDSone is slightly fresher** (Amazon returns to 2026-09-13 vs 09-12;
+  eBay window identical at 413 rows / 56 NAD). All differences are recency (Type A) except the two below.
+- **Refund totals match exactly** on both platforms (eBay SKU refund 9209.36 == 9209.36; Amazon per-key identical).
+- **`ebay_reasons` and `nad_ebay_candidates` are 100% identical**; the eBay 2-hop SKU bridge attributes
+  SKUs identically to the old `order_transaction` (364/364 keys, 0 only-old/0 only-new).
+- **Missing data: none.** No key in the old DB is absent from the new DB (LEDSone is a superset by recency).
+
+| Query | old→new rows | notes |
+|---|---|---|
+| amazon_reasons | 67 → 67 | 55 identical, 12 recency |
+| amazon_skus | 1550 → 1561 | 1543 identical, 7 recency, 11 new SKUs |
+| ebay_reasons | 28 → 28 | identical |
+| ebay_skus | 364 → 364 | refund identical; **40 rows: `units` differ — see KNOWN ISSUE** |
+| nad_amazon_candidates | 177 → 179 | 176 identical, 1 recency, 2 new |
+| nad_ebay_candidates | 53 → 53 | identical |
+
+### KNOWN ISSUE (open) — eBay "Units" under-counts on LEDSone
+`customer_service.ebay_returns.return_qty` is **`integer`** on LEDSone; on the old DB it was
+`double precision`. The unchanged SQL `return_qty / GREATEST(n,1)` (even split across variation SKUs)
+therefore does **integer division** on LEDSone and truncates fractional per-variation units to **0**.
+- Impact: eBay total units **631.2 → 604.0** (~4%); 40 SKU rows affected (28 show 0 units).
+- **Refunds and return counts are NOT affected** (refund uses `double precision`); Amazon units are
+  unaffected (summed, not divided).
+- Fix (not applied — validation was report-only): cast the numerator in the `ebay_skus` query,
+  `r.q::numeric / GREATEST(m.n,1)`. One change; restores exact old-DB parity, nothing else moves.
+
+### EXPECTED (approved) — Amazon "Marketplace" shows `UNSPECIFIED` more often
+226 Amazon SKU rows show `UNSPECIFIED` where the old DB showed a country, because LEDSone's
+`amazon_returns` has no marketplace column and ~16% of returns have no order header (Option A;
+never invented). 5 rows where old was NULL now correctly resolve to Germany. **Zero misattributions.**
+Affects the Amazon SKU tab's marketplace label only; refunds/counts/reasons/NAD candidates unaffected.

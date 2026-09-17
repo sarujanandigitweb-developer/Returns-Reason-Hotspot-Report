@@ -66,8 +66,9 @@ Paste-ready explanation: [`handover/message-to-DWC.md`](../handover/message-to-D
 
 | Severity | Issue |
 |---|---|
-| **HIGH** | **Amazon refund coverage is 42.7% incomplete.** 940 of 2,199 returns have `refunded_amount = NULL` (313 of 1,205 in GBP). The KPI shows "Total Returns 1,205" beside "Total Refund £21,412.33" — inviting the false read that all 1,205 are costed. 892 are. **Fix is a one-line caption. Not applied.** |
-| **MEDIUM** | `AMZ-PG-BAD-DESC` unresolved — 3rd-biggest GBP reason (£2,340.74), biggest USD reason. If it is the "not as described" signal, it points at the Listing team. Needs DWC's ruling. |
+| **MEDIUM** *(new, LEDSone)* | **eBay "Units" under-counts.** `ebay_returns.return_qty` is an `integer` on LEDSone (was `double precision`), so the even-split `return_qty / GREATEST(n,1)` in `ebay_skus` does integer division and truncates fractional variation units to 0 (eBay total units ~631 → ~604). **Refunds and counts are unaffected.** Fix: cast `r.q::numeric`. Not applied. See [validation/ledsone-migration.md](../validation/ledsone-migration.md) §9. |
+| **HIGH** | **Amazon refund coverage is 42.7% incomplete.** 940 of 2,199 returns have `refunded_amount = NULL` (313 of 1,205 in GBP). The KPI shows "Total Returns 1,205" beside "Total Refund £21,412.33" — inviting the false read that all 1,205 are costed. 892 are. **Fix is a one-line caption. Not applied.** *(figures are old-DB; the coverage gap persists on LEDSone.)* |
+| **RESOLVED** | `AMZ-PG-BAD-DESC` — **decided:** this is the Amazon "not as described" signal the project uses (disclosed on the dashboard, drives the Mismatch tab). Not merged into the near-empty literal `NOT_AS_DESCRIBED`. |
 | **MEDIUM** | £5,157.26 of Amazon return shipping cost (`label_cost`) is not in the report. Refunds are not the whole bill. |
 | **LOW** | 15 eBay returns are ESCALATED (£508) and 63 still open — invisible in the dashboard. |
 | **RESOLVED** | Non-deterministic sort tie-break — fixed; the refresh is now byte-identical run to run. |
